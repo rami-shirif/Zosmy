@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import NumberFlow from "@number-flow/react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
 import {
   ArrowDown,
   ArrowLeft,
@@ -10,11 +10,11 @@ import {
   Heart,
   House,
   Leaf,
-  Menu,
   Minus,
   Pause,
   Plus,
   Play,
+  Quote,
   ShoppingBag,
   Sparkles,
   Store,
@@ -25,16 +25,81 @@ import { products } from "./products";
 
 const categories = ["All", "Skincare", "Body care", "Sets"];
 const popularProducts = products.filter((product) => product.badge);
+const CART_STORAGE_KEY = "zosmy-bag";
+const testimonials = [
+  {
+    id: "zosmy-customer-1",
+    quote: "this good, شكرا 😍, i like it thank you Zosmy",
+    author: "A Zosmy customer",
+  },
+  {
+    id: "zosmy-customer-2",
+    quote: "thank you 😍",
+    author: "A Zosmy customer",
+  },
+  {
+    id: "zosmy-customer-3",
+    quote: "حبيتها 💖",
+    author: "A Zosmy customer",
+  },
+];
 
 const reveal = {
   hidden: { opacity: 0, y: 24 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.65, ease: [0.2, 0.65, 0.3, 0.9] } },
 };
 
+function readSavedCart() {
+  let serialized;
+  try {
+    serialized = window.localStorage.getItem(CART_STORAGE_KEY);
+  } catch (error) {
+    console.error("Could not read the saved bag from local storage.", error);
+    return [];
+  }
+  if (serialized === null) return [];
+
+  let savedItems;
+  try {
+    savedItems = JSON.parse(serialized);
+  } catch (error) {
+    console.error("The saved bag contains invalid JSON.", error);
+    return [];
+  }
+
+  if (!Array.isArray(savedItems)) {
+    console.error("The saved bag is not a list of products.");
+    return [];
+  }
+
+  return savedItems.reduce((restored, item) => {
+    if (
+      !item ||
+      typeof item.productId !== "string" ||
+      !Number.isSafeInteger(item.quantity) ||
+      item.quantity < 1
+    ) {
+      console.warn("Ignoring an invalid item in the saved bag.", item);
+      return restored;
+    }
+
+    const product = products.find((candidate) => candidate.id === item.productId);
+    if (!product) {
+      console.warn("Ignoring a saved bag item for an unknown product.", item.productId);
+      return restored;
+    }
+
+    const existing = restored.find((entry) => entry.product.id === product.id);
+    if (existing) existing.quantity += item.quantity;
+    else restored.push({ product, quantity: item.quantity });
+    return restored;
+  }, []);
+}
+
 function App() {
   const [category, setCategory] = useState("All");
   const [pathname, setPathname] = useState(window.location.pathname);
-  const [cart, setCart] = useState([]);
+  const [cart, setCart] = useState(readSavedCart);
   const [cartOpen, setCartOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [customer, setCustomer] = useState({
@@ -48,8 +113,10 @@ function App() {
   const [orderStatus, setOrderStatus] = useState("");
   const [newsletterStatus, setNewsletterStatus] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [activeMobileTab, setActiveMobileTab] = useState("home");
+  const [bagNotice, setBagNotice] = useState(null);
+  const bagNoticeId = useRef(0);
+  const bagButtonControls = useAnimationControls();
   const selectedProduct = products.find(
     (product) => pathname === `/products/${product.id}`,
   );
@@ -71,12 +138,38 @@ function App() {
       : "Zosmy — A little closer to your glow";
   }, [selectedProduct]);
 
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [pathname]);
+
+  useEffect(() => {
+    const savedItems = cart.map(({ product, quantity }) => ({
+      productId: product.id,
+      quantity,
+    }));
+
+    try {
+      window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(savedItems));
+    } catch (error) {
+      console.error("Could not save the bag to local storage.", error);
+    }
+  }, [cart]);
+
+  useEffect(() => {
+    if (!bagNotice) return undefined;
+    const timer = window.setTimeout(() => setBagNotice(null), 2600);
+    return () => window.clearTimeout(timer);
+  }, [bagNotice]);
+
   function navigate(path) {
-    window.history.pushState({}, "", path);
-    setPathname(path);
+    if (window.location.pathname === path) {
+      window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+    } else {
+      window.history.pushState({}, "", path);
+      setPathname(path);
+    }
     setOrderStatus("");
     setDetailQuantity(1);
-    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   const visibleProducts = useMemo(
@@ -105,6 +198,17 @@ function App() {
             : item,
         )
         .filter((item) => item.quantity > 0);
+    });
+  }
+
+  function addToBag(product) {
+    updateQuantity(product, 1);
+    bagNoticeId.current += 1;
+    setBagNotice({ id: bagNoticeId.current, productName: product.name });
+    bagButtonControls.start({
+      scale: [1, 1.14, 1],
+      rotate: [0, -5, 5, 0],
+      transition: { duration: 0.55, ease: "easeInOut" },
     });
   }
 
@@ -151,34 +255,48 @@ function App() {
 
   return (
     <div className="site-shell">
-      <div className="announcement">
-        A little something for your first order — enjoy 10% off with <b>HELLO10</b>
+      <div className="announcement black-friday-banner">
+        <span className="black-friday-badge"><Sparkles size={12} aria-hidden="true" /> BLACK FRIDAY</span>
+        <span className="black-friday-copy">A little something for your first order</span>
+        <b>10% OFF · HELLO10</b>
         <ArrowRight size={14} aria-hidden="true" />
       </div>
       <header className="header">
-        <button
-          className="icon-button mobile-menu-button"
-          aria-label="Open menu"
-          onClick={() => setMenuOpen((open) => !open)}
-        >
-          <Menu size={21} />
-        </button>
         <a href="/" className="wordmark" aria-label="Zosmy home" onClick={(event) => { event.preventDefault(); navigate("/"); }}>zosmy<span>®</span></a>
-        <nav className={menuOpen ? "nav-links nav-open" : "nav-links"}>
-          <a href={selectedProduct ? "/#shop" : "#shop"} onClick={(event) => { setMenuOpen(false); if (selectedProduct) { event.preventDefault(); navigate("/"); } }}>Shop</a>
-          <a href={selectedProduct ? "/#story" : "#story"} onClick={(event) => { setMenuOpen(false); if (selectedProduct) { event.preventDefault(); navigate("/"); } }}>Our story</a>
-          <a href={selectedProduct ? "/#ritual" : "#ritual"} onClick={(event) => { setMenuOpen(false); if (selectedProduct) { event.preventDefault(); navigate("/"); } }}>The ritual</a>
-        </nav>
-        <button
+        <motion.button
           className="bag-button"
+          animate={bagButtonControls}
           onClick={() => setCartOpen(true)}
           aria-label={`Open bag, ${cartCount} items`}
         >
           <ShoppingBag size={19} strokeWidth={1.6} />
           <span>Bag</span>
           <span className="bag-count"><NumberFlow value={cartCount} /></span>
-        </button>
+        </motion.button>
       </header>
+
+      <AnimatePresence>
+        {bagNotice && (
+          <motion.div
+            className="bag-toast"
+            key={bagNotice.id}
+            role="status"
+            initial={{ opacity: 0, y: 18, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 12, scale: 0.98 }}
+            transition={{ duration: 0.24, ease: "easeOut" }}
+          >
+            <span className="bag-toast-check"><Check size={17} /></span>
+            <span className="bag-toast-copy">
+              <strong>Added to your bag</strong>
+              <small>{bagNotice.productName}</small>
+            </span>
+            <button type="button" onClick={() => { setCartOpen(true); setBagNotice(null); }}>
+              VIEW BAG <ArrowRight size={13} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <main id="top">
         {selectedProduct ? (
@@ -292,7 +410,7 @@ function App() {
           </motion.div>
           <PopularProducts
             products={popularProducts}
-            onAdd={(product) => updateQuantity(product, 1)}
+            onAdd={addToBag}
             onOpen={(product) => navigate(`/products/${product.id}`)}
           />
           <div className="shop-toolbar">
@@ -304,7 +422,10 @@ function App() {
                   onClick={() => setCategory(item)}
                   aria-pressed={category === item}
                 >
-                  {item}
+                  <span>{item}</span>
+                  <span className="filter-chip-count">
+                    {item === "All" ? products.length : products.filter((product) => product.category === item).length}
+                  </span>
                 </button>
               ))}
             </div>
@@ -343,7 +464,7 @@ function App() {
                     </button>
                     <button
                       className="quick-add"
-                      onClick={() => updateQuantity(product, 1)}
+                      onClick={() => addToBag(product)}
                     >
                       ADD TO BAG <Plus size={14} />
                     </button>
@@ -361,6 +482,24 @@ function App() {
             </AnimatePresence>
           </motion.div>
         </section>
+
+        <motion.section
+          className="review-section section-pad"
+          id="reviews"
+          variants={reveal}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.25 }}
+        >
+          <div className="review-intro">
+            <div className="eyebrow"><span className="eyebrow-line" /> A NOTE FROM THE COMMUNITY</div>
+            <h2>A little love,<br /><em>straight from you.</em></h2>
+            <p>
+              A little note from someone who made time for their skin.
+            </p>
+          </div>
+          <TestimonialSlider />
+        </motion.section>
 
         <section className="story-section" id="story">
           <div className="story-image">
@@ -497,7 +636,10 @@ function App() {
               transition={{ type: "tween", duration: 0.28 }}
             >
               <div className="drawer-heading">
-                <h2 id="cart-title">Your little bag <span>({cartCount})</span></h2>
+                <div className="drawer-title">
+                  <span className="drawer-kicker">GOOD THINGS, GATHERED</span>
+                  <h2 id="cart-title">Your bag <span>{cartCount}</span></h2>
+                </div>
                 <button className="icon-button" onClick={() => setCartOpen(false)} aria-label="Close bag"><X size={20} /></button>
               </div>
               {cart.length === 0 ? (
@@ -526,7 +668,10 @@ function App() {
                     ))}
                   </div>
                   <div className="cart-bottom">
-                    <div className="subtotal"><span>Subtotal</span><strong>{formatDirhams(subtotal)}</strong></div>
+                    <div className="subtotal">
+                      <span>Subtotal</span>
+                      <strong><NumberFlow value={subtotal} locales="fr-MA" format={{ maximumFractionDigits: 2 }} /> DH</strong>
+                    </div>
                     <p>Shipping calculated at checkout.</p>
                     <button className="button button-dark checkout-button" onClick={() => { setCheckoutOpen(true); setOrderStatus(""); }}>CONTINUE TO CHECKOUT <ArrowRight size={15} /></button>
                     <span className="secure-note"><Heart size={13} /> A little care goes a long way</span>
@@ -566,7 +711,7 @@ function App() {
               ) : (
                 <form className="checkout-form" onSubmit={submitOrder}>
                   <CustomerFields customer={customer} setCustomer={setCustomer} />
-                  <div className="checkout-total"><span>Your feel-good total</span><strong>{formatDirhams(subtotal)}</strong></div>
+                  <div className="checkout-total"><span>Your feel-good total</span><strong><NumberFlow value={subtotal} locales="fr-MA" format={{ maximumFractionDigits: 2 }} /> DH</strong></div>
                   {orderStatus?.type === "error" && <p className="form-message" role="alert">{orderStatus.message}</p>}
                   <button className="button button-dark checkout-button" type="submit" disabled={isSubmitting}>
                     {isSubmitting ? "SAVING YOUR ORDER..." : "PLACE YOUR ORDER"} <ArrowRight size={15} />
@@ -649,10 +794,12 @@ function PopularProducts({ products: items, onAdd, onOpen }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [isInteracting, setIsInteracting] = useState(false);
+  const [direction, setDirection] = useState(1);
 
   useEffect(() => {
     if (isPaused || isInteracting || items.length < 2 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return undefined;
     const timer = window.setInterval(() => {
+      setDirection(1);
       setActiveIndex((index) => (index + 1) % items.length);
     }, 4500);
     return () => window.clearInterval(timer);
@@ -662,6 +809,7 @@ function PopularProducts({ products: items, onAdd, onOpen }) {
 
   const activeProduct = items[activeIndex];
   const move = (direction) => {
+    setDirection(direction);
     setActiveIndex((index) => (index + direction + items.length) % items.length);
   };
 
@@ -695,22 +843,62 @@ function PopularProducts({ products: items, onAdd, onOpen }) {
           <button type="button" aria-label="Next popular product" onClick={() => move(1)}><ArrowRight size={17} /></button>
         </div>
       </div>
-      <div className="popular-slide" key={activeProduct.id} aria-live="polite">
-        <div className="popular-image" style={{ backgroundColor: activeProduct.tone }}>
-          <img src={activeProduct.image} alt={activeProduct.name} loading="lazy" />
-          {activeProduct.badge && <span className="product-badge">{activeProduct.badge}</span>}
-        </div>
-        <div className="popular-copy">
-          <span className="popular-kicker"><Sparkles size={14} /> A CUSTOMER FAVORITE</span>
-          <h4>{activeProduct.name}</h4>
-          <p>{activeProduct.description}</p>
-          <strong>{formatDirhams(activeProduct.price)}</strong>
-          <div className="popular-actions">
-            <button type="button" className="button button-dark" onClick={() => onAdd(activeProduct)}>ADD TO BAG <Plus size={15} /></button>
-            <button type="button" className="text-link" onClick={() => onOpen(activeProduct)}>EXPLORE <ArrowRight size={14} /></button>
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          className="popular-slide"
+          key={activeProduct.id}
+          aria-live="polite"
+          drag="x"
+          dragDirectionLock
+          dragConstraints={{ left: 0, right: 0 }}
+          dragElastic={0.12}
+          dragMomentum={false}
+          onDragStart={() => setIsInteracting(true)}
+          onDragEnd={(_, info) => {
+            if (info.offset.x < -55 || info.velocity.x < -450) move(1);
+            else if (info.offset.x > 55 || info.velocity.x > 450) move(-1);
+            setIsInteracting(false);
+          }}
+          initial={{ opacity: 0, x: direction * 36 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: direction * -28 }}
+          transition={{ duration: 0.3, ease: "easeOut" }}
+        >
+          <a
+            className="popular-image"
+            href={`/products/${activeProduct.id}`}
+            aria-label={`View ${activeProduct.name}`}
+            onClick={(event) => {
+              event.preventDefault();
+              onOpen(activeProduct);
+            }}
+            style={{ backgroundColor: activeProduct.tone }}
+          >
+            <img src={activeProduct.image} alt="" loading="lazy" />
+            {activeProduct.badge && <span className="product-badge">{activeProduct.badge}</span>}
+          </a>
+          <div className="popular-copy">
+            <span className="popular-kicker"><Sparkles size={14} /> A CUSTOMER FAVORITE</span>
+            <h4>
+              <a
+                href={`/products/${activeProduct.id}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  onOpen(activeProduct);
+                }}
+              >
+                {activeProduct.name}
+              </a>
+            </h4>
+            <p>{activeProduct.description}</p>
+            <strong>{formatDirhams(activeProduct.price)}</strong>
+            <div className="popular-actions">
+              <button type="button" className="button button-dark" onClick={() => onAdd(activeProduct)}>ADD TO BAG <Plus size={15} /></button>
+              <button type="button" className="text-link" onClick={() => onOpen(activeProduct)}>EXPLORE <ArrowRight size={14} /></button>
+            </div>
           </div>
-        </div>
-      </div>
+        </motion.div>
+      </AnimatePresence>
       <div className="popular-dots" role="group" aria-label="Choose a popular product">
         {items.map((product, index) => (
           <button
@@ -719,7 +907,10 @@ function PopularProducts({ products: items, onAdd, onOpen }) {
             className={index === activeIndex ? "popular-dot active" : "popular-dot"}
             aria-label={`Show ${product.name}`}
             aria-current={index === activeIndex ? "true" : undefined}
-            onClick={() => setActiveIndex(index)}
+            onClick={() => {
+              setDirection(index >= activeIndex ? 1 : -1);
+              setActiveIndex(index);
+            }}
           />
         ))}
       </div>
@@ -729,6 +920,95 @@ function PopularProducts({ products: items, onAdd, onOpen }) {
 
 function DropletIcon() {
   return <span className="droplet-icon">◒</span>;
+}
+
+function TestimonialSlider() {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [direction, setDirection] = useState(1);
+  const [isInteracting, setIsInteracting] = useState(false);
+  const activeTestimonial = testimonials[activeIndex];
+
+  useEffect(() => {
+    if (
+      isInteracting ||
+      testimonials.length < 2 ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) return undefined;
+
+    const timer = window.setInterval(() => {
+      setDirection(1);
+      setActiveIndex((index) => (index + 1) % testimonials.length);
+    }, 5500);
+    return () => window.clearInterval(timer);
+  }, [isInteracting]);
+
+  function move(step) {
+    setDirection(step);
+    setActiveIndex((index) => (index + step + testimonials.length) % testimonials.length);
+  }
+
+  function select(index) {
+    setDirection(index >= activeIndex ? 1 : -1);
+    setActiveIndex(index);
+  }
+
+  return (
+    <div
+      className="testimonial-slider"
+      aria-label="Customer testimonials"
+      onMouseEnter={() => setIsInteracting(true)}
+      onMouseLeave={() => setIsInteracting(false)}
+      onFocus={() => setIsInteracting(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setIsInteracting(false);
+      }}
+    >
+      <div className="testimonial-slider-header">
+        <span className="review-customer-label">KIND WORDS, KEPT CLOSE</span>
+      </div>
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.article
+          className={testimonials.length > 1 ? "testimonial-card is-draggable" : "testimonial-card"}
+          key={activeTestimonial.id}
+          drag={testimonials.length > 1 ? "x" : false}
+          dragDirectionLock
+          dragConstraints={{ left: 0, right: 0 }}
+          dragElastic={0.12}
+          dragMomentum={false}
+          onDragStart={() => setIsInteracting(true)}
+          onDragEnd={(_, info) => {
+            if (info.offset.x < -55 || info.velocity.x < -450) move(1);
+            else if (info.offset.x > 55 || info.velocity.x > 450) move(-1);
+            setIsInteracting(false);
+          }}
+          initial={{ x: direction * 80, rotate: direction * 1.8, scale: 0.96 }}
+          animate={{ x: 0, rotate: 0, scale: 1 }}
+          exit={{ x: direction * -80, rotate: direction * -1.8, scale: 0.96 }}
+          transition={{ type: "spring", stiffness: 280, damping: 26, mass: 0.7 }}
+        >
+          <span className="review-sparkle" aria-hidden="true"><Quote size={22} /></span>
+          <blockquote className="review-quote" dir="auto">{activeTestimonial.quote}</blockquote>
+          <div className="review-attribution">
+            <span className="review-avatar">Z</span>
+            <span>{activeTestimonial.author}</span>
+          </div>
+        </motion.article>
+      </AnimatePresence>
+      <div className="testimonial-dots" role="group" aria-label="Choose a testimonial">
+        {testimonials.map((testimonial, index) => (
+          <button
+            type="button"
+            key={testimonial.id}
+            className={index === activeIndex ? "testimonial-dot active" : "testimonial-dot"}
+            aria-label={`Show testimonial ${index + 1}`}
+            aria-current={index === activeIndex ? "true" : undefined}
+            disabled={testimonials.length < 2}
+            onClick={() => select(index)}
+          />
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function ProductDetail({
@@ -746,34 +1026,63 @@ function ProductDetail({
     <section className="product-detail-page section-pad">
       <button className="text-link product-back-link" onClick={onBack}><ArrowRight size={14} /> BACK TO SHOP</button>
       <div className="product-detail-layout">
-        <div className="product-detail-image" style={{ backgroundColor: product.tone }}>
+        <motion.div
+          className="product-detail-image"
+          style={{ backgroundColor: product.tone }}
+          initial={{ opacity: 0, scale: 0.96, y: 16 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.65, ease: "easeOut" }}
+        >
           <img src={product.image} alt={product.name} />
           {product.badge && <span className="product-badge">{product.badge}</span>}
-        </div>
-        <div className="product-detail-copy">
+          <motion.span
+            className="product-image-note"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.45, duration: 0.5 }}
+          >
+            A LITTLE MOMENT, JUST FOR YOU
+          </motion.span>
+        </motion.div>
+        <motion.div
+          className="product-detail-copy"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.55, delay: 0.12, ease: "easeOut" }}
+        >
           <div className="eyebrow"><span className="eyebrow-line" /> {product.category.toUpperCase()}</div>
           <h1>{product.name}</h1>
           <p className="product-detail-description">{product.description}</p>
-          <strong className="product-detail-price">{formatDirhams(product.price)}</strong>
-          <form className="product-order-form" onSubmit={onSubmit}>
-            <div className="detail-quantity">
-              <span>QUANTITY</span>
-              <div className="quantity-control">
-                <button type="button" onClick={() => setQuantity((value) => Math.max(1, value - 1))} aria-label="Remove one"><Minus size={13} /></button>
-                <span>{quantity}</span>
-                <button type="button" onClick={() => setQuantity((value) => value + 1)} aria-label="Add one"><Plus size={13} /></button>
-              </div>
+          <div className="product-detail-rating"><span aria-label="Rated 5 out of 5">★★★★★</span> A LITTLE LOVE FROM OUR COMMUNITY</div>
+          <div className="product-buy-card">
+            <div className="product-buy-heading">
+              <strong className="product-detail-price">{formatDirhams(product.price)}</strong>
+              <span>Pay on delivery</span>
             </div>
-            <CustomerFields customer={customer} setCustomer={setCustomer} />
-            <div className="checkout-total"><span>Total</span><strong>{formatDirhams(product.price * quantity)}</strong></div>
-            {orderStatus?.type === "success" && <p className="order-inline-success" role="status">{orderStatus.message}</p>}
-            {orderStatus?.type === "error" && <p className="form-message" role="alert">{orderStatus.message}</p>}
-            <button className="button button-dark checkout-button" type="submit" disabled={isSubmitting || orderStatus?.type === "success"}>
-              {isSubmitting ? "SENDING YOUR ORDER..." : orderStatus?.type === "success" ? "ORDER RECEIVED" : "ORDER THIS PRODUCT"} <ArrowRight size={15} />
-            </button>
-            <p className="checkout-disclaimer">Pay on delivery. We’ll contact you to confirm your order.</p>
-          </form>
-        </div>
+            <form className="product-order-form" onSubmit={onSubmit}>
+              <div className="detail-quantity">
+                <span>QUANTITY</span>
+                <div className="quantity-control">
+                  <button type="button" onClick={() => setQuantity((value) => Math.max(1, value - 1))} aria-label="Remove one"><Minus size={13} /></button>
+                  <span>{quantity}</span>
+                  <button type="button" onClick={() => setQuantity((value) => value + 1)} aria-label="Add one"><Plus size={13} /></button>
+                </div>
+              </div>
+              <div className="product-buy-fields">
+                <span className="product-fields-title">WHERE SHOULD WE SEND IT?</span>
+                <CustomerFields customer={customer} setCustomer={setCustomer} />
+              </div>
+              <div className="checkout-total"><span>Your feel-good total</span><strong><NumberFlow value={product.price * quantity} locales="fr-MA" format={{ maximumFractionDigits: 2 }} /> DH</strong></div>
+              {orderStatus?.type === "success" && <p className="order-inline-success" role="status">{orderStatus.message}</p>}
+              {orderStatus?.type === "error" && <p className="form-message" role="alert">{orderStatus.message}</p>}
+              <button className="button button-dark checkout-button" type="submit" disabled={isSubmitting || orderStatus?.type === "success"}>
+                {isSubmitting ? "SENDING YOUR ORDER..." : orderStatus?.type === "success" ? "ORDER RECEIVED" : "ORDER THIS PRODUCT"} <ArrowRight size={15} />
+              </button>
+              <p className="checkout-disclaimer">No online payment needed. We’ll contact you to confirm delivery.</p>
+            </form>
+          </div>
+          <div className="product-buy-promise"><span><Check size={14} /> Thoughtful ingredients</span><span><Check size={14} /> Delivery confirmation by phone</span></div>
+        </motion.div>
       </div>
     </section>
   );
