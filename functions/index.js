@@ -3,8 +3,8 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 
-const telegramBotToken = defineSecret("TELEGRAM_BOT_TOKEN");
-const telegramChatId = defineSecret("TELEGRAM_CHAT_ID");
+const telegramBotToken = defineSecret("9027818646:AAFju5pJiejHk_SragPkqiNBrcaq50CfE2Q");
+const telegramChatId = defineSecret("9027818646");
 const currency = "MAD";
 
 // Keep this trusted price list in sync with src/products.js.
