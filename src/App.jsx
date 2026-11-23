@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import NumberFlow from "@number-flow/react";
 import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
 import {
@@ -7,6 +7,7 @@ import {
   ArrowRight,
   BookOpen,
   Check,
+  Copy,
   Heart,
   House,
   Leaf,
@@ -18,11 +19,14 @@ import {
   ShoppingBag,
   Sparkles,
   Store,
+  UserRound,
   X,
 } from "lucide-react";
-import { getPlaceOrder } from "./firebase";
+import { requestOrderNotification } from "./orderNotification";
 import { products } from "./products";
 
+const AdminPage = lazy(() => import("./AdminPage"));
+const AccountPage = lazy(() => import("./AccountPage"));
 const categories = ["All", "Skincare", "Body care", "Sets"];
 const popularProducts = products.filter((product) => product.badge);
 const CART_STORAGE_KEY = "zosmy-bag";
@@ -90,8 +94,8 @@ function readSavedCart() {
     }
 
     const existing = restored.find((entry) => entry.product.id === product.id);
-    if (existing) existing.quantity += item.quantity;
-    else restored.push({ product, quantity: item.quantity });
+    if (existing) existing.quantity = Math.min(25, existing.quantity + item.quantity);
+    else restored.push({ product, quantity: Math.min(25, item.quantity) });
     return restored;
   }, []);
 }
@@ -99,6 +103,14 @@ function readSavedCart() {
 function App() {
   const [category, setCategory] = useState("All");
   const [pathname, setPathname] = useState(window.location.pathname);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authError, setAuthError] = useState("");
+  const [couponInput, setCouponInput] = useState("");
+  const [discountCode, setDiscountCode] = useState("");
+  const [couponFeedback, setCouponFeedback] = useState("");
+  const [guestReceipt, setGuestReceipt] = useState(null);
+  const [trackingCodeForAccount, setTrackingCodeForAccount] = useState("");
+  const [copiedTrackingCode, setCopiedTrackingCode] = useState(false);
   const [cart, setCart] = useState(readSavedCart);
   const [cartOpen, setCartOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -122,8 +134,26 @@ function App() {
   );
 
   useEffect(() => {
+    let active = true;
+    let unsubscribe;
+    import("./firebase")
+      .then(({ subscribeToAuth }) => {
+        if (active) unsubscribe = subscribeToAuth(setCurrentUser);
+      })
+      .catch((error) => {
+        console.error("Could not initialize customer account state.", error);
+        if (active) setAuthError(error.message || "Could not connect to customer accounts.");
+      });
+    return () => {
+      active = false;
+      unsubscribe?.();
+    };
+  }, []);
+
+  useEffect(() => {
     function syncPathname() {
       setPathname(window.location.pathname);
+      setActiveMobileTab(window.location.pathname === "/account" ? "account" : "home");
       setOrderStatus("");
       setDetailQuantity(1);
     }
@@ -133,10 +163,12 @@ function App() {
   }, []);
 
   useEffect(() => {
-    document.title = selectedProduct
+    document.title = pathname === "/admin"
+      ? "Orders — Zosmy Admin"
+      : selectedProduct
       ? `${selectedProduct.name} — Zosmy`
       : "Zosmy — A little closer to your glow";
-  }, [selectedProduct]);
+  }, [pathname, selectedProduct]);
 
   useLayoutEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
@@ -184,17 +216,44 @@ function App() {
     (total, item) => total + item.product.price * item.quantity,
     0,
   );
+  const checkoutTotal = discountCode === "zosmy2027"
+    ? Math.round(subtotal * 0.9 * 100) / 100
+    : subtotal;
+
+  function applyCoupon() {
+    if (couponInput.trim().toLowerCase() === "zosmy2027") {
+      setDiscountCode("zosmy2027");
+      setCouponFeedback("10% discount applied.");
+    } else {
+      setDiscountCode("");
+      setCouponFeedback("That discount code isn’t valid.");
+    }
+  }
+
+  function updateCouponInput(value) {
+    setCouponInput(value);
+    setDiscountCode("");
+    setCouponFeedback("");
+  }
+
+  function openTrackingPage(code) {
+    setTrackingCodeForAccount(code);
+    setGuestReceipt(null);
+    setCopiedTrackingCode(false);
+    setActiveMobileTab("account");
+    navigate("/account");
+  }
 
   function updateQuantity(product, change) {
     setCart((current) => {
       const existing = current.find((item) => item.product.id === product.id);
       if (!existing && change > 0) {
-        return [...current, { product, quantity: change }];
+        return [...current, { product, quantity: Math.min(25, change) }];
       }
       return current
         .map((item) =>
           item.product.id === product.id
-            ? { ...item, quantity: item.quantity + change }
+            ? { ...item, quantity: Math.min(25, item.quantity + change) }
             : item,
         )
         .filter((item) => item.quantity > 0);
@@ -219,38 +278,54 @@ function App() {
     setIsSubmitting(true);
     setOrderStatus("");
     try {
-      const placeOrder = await getPlaceOrder();
-      if (!placeOrder) {
-        setOrderStatus({
-          type: "error",
-          message: "Firebase isn't connected yet. Add your Firebase settings to .env.local to place an order.",
-        });
-        return;
-      }
-      const result = await placeOrder({
+      const order = {
+        ownerUid: currentUser?.uid,
+        discountCode,
         customer,
         items: items.map(({ product, quantity }) => ({
           productId: product.id,
           quantity,
+          unitPrice: product.price,
         })),
-      });
-      const { telegramNotified } = result.data;
+      };
+      const { createOrder } = await import("./firebase");
+      const { orderId, trackingCode } = await createOrder(order);
+      let successMessage = "Your order is saved. We'll contact you to confirm shortly.";
+      try {
+        await requestOrderNotification(orderId);
+      } catch (notificationError) {
+        console.error("Order saved, but immediate Telegram notification failed.", notificationError);
+        successMessage = "Your order is saved. The shop will be notified shortly.";
+      }
       if (items === cart) setCart([]);
       setOrderStatus({
         type: "success",
-        message: telegramNotified
-          ? "Your order is in. Thanks for making a little time for you."
-          : "Your order was saved, but we couldn't notify the shop on Telegram. Please contact us to confirm.",
+        message: successMessage,
+        trackingCode,
+        total: items.reduce((sum, item) => sum + item.product.price * item.quantity, 0) * (discountCode ? 0.9 : 1),
       });
+      if (!currentUser) {
+        setGuestReceipt({ trackingCode });
+        setCheckoutOpen(false);
+        setCartOpen(false);
+      }
     } catch (error) {
       console.error("Could not submit the order.", error);
       setOrderStatus({
         type: "error",
-        message: error.message || "We couldn't save your order. Please try again in a moment.",
+        message: error.message || "We couldn't send your order. Please try again in a moment.",
       });
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  if (pathname === "/admin") {
+    return (
+      <Suspense fallback={<main className="admin-main">Loading order dashboard…</main>}>
+        <AdminPage />
+      </Suspense>
+    );
   }
 
   return (
@@ -258,11 +333,20 @@ function App() {
       <div className="announcement black-friday-banner">
         <span className="black-friday-badge"><Sparkles size={12} aria-hidden="true" /> BLACK FRIDAY</span>
         <span className="black-friday-copy">A little something for your first order</span>
-        <b>10% OFF · HELLO10</b>
+        <b>10% OFF · ZOSMY2027</b>
         <ArrowRight size={14} aria-hidden="true" />
       </div>
       <header className="header">
         <a href="/" className="wordmark" aria-label="Zosmy home" onClick={(event) => { event.preventDefault(); navigate("/"); }}>zosmy<span>®</span></a>
+        <button
+          className="account-button"
+          type="button"
+          onClick={() => navigate("/account")}
+          aria-label={currentUser ? "Open your account and orders" : "Sign in or create an account"}
+        >
+          <UserRound size={18} strokeWidth={1.7} />
+          <span>{currentUser ? "Account" : "Sign in"}</span>
+        </button>
         <motion.button
           className="bag-button"
           animate={bagButtonControls}
@@ -299,13 +383,26 @@ function App() {
       </AnimatePresence>
 
       <main id="top">
-        {selectedProduct ? (
+        {pathname === "/account" ? (
+          <Suspense fallback={<section className="account-page section-pad">Loading account…</section>}>
+            <AccountPage
+              user={currentUser}
+              authError={authError}
+              initialTrackingCode={trackingCodeForAccount}
+            />
+          </Suspense>
+        ) : selectedProduct ? (
           <ProductDetail
             product={selectedProduct}
             quantity={detailQuantity}
             setQuantity={setDetailQuantity}
             customer={customer}
             setCustomer={setCustomer}
+            couponInput={couponInput}
+            discountCode={discountCode}
+            couponFeedback={couponFeedback}
+            onCouponInputChange={updateCouponInput}
+            onApplyCoupon={applyCoupon}
             orderStatus={orderStatus}
             isSubmitting={isSubmitting}
             onSubmit={(event) => submitOrder(event, [{ product: selectedProduct, quantity: detailQuantity }])}
@@ -580,7 +677,7 @@ function App() {
         )}
       </main>
 
-      {!selectedProduct && (
+      {!selectedProduct && pathname !== "/account" && (
       <footer className="footer">
         <div className="footer-top">
           <div className="footer-brand">
@@ -707,18 +804,113 @@ function App() {
               <div className="eyebrow"><span className="eyebrow-line" /> ALMOST YOURS</div>
               <h2 id="checkout-title">A little more <em>you-time.</em></h2>
               {orderStatus?.type === "success" ? (
-                <div className="order-success"><span><Check size={23} /></span><p>{orderStatus.message}</p><button className="text-link" onClick={() => { setCheckoutOpen(false); setCartOpen(false); }}>BACK TO THE GOOD STUFF <ArrowRight size={15} /></button></div>
+                <motion.div
+                  className="order-success"
+                  role="status"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.35, ease: "easeOut" }}
+                >
+                  <motion.span
+                    initial={{ scale: 0.55, rotate: -18 }}
+                    animate={{ scale: 1, rotate: 0 }}
+                    transition={{ type: "spring", stiffness: 280, damping: 16 }}
+                  >
+                    <motion.svg viewBox="0 0 24 24" aria-hidden="true">
+                      <motion.path
+                        d="m5 12 4 4L19 6"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        initial={{ pathLength: 0 }}
+                        animate={{ pathLength: 1 }}
+                        transition={{ delay: 0.15, duration: 0.3 }}
+                      />
+                    </motion.svg>
+                  </motion.span>
+                  <p>{orderStatus.message}</p>
+                  <button className="text-link" onClick={() => { setCheckoutOpen(false); setCartOpen(false); }}>BACK TO THE GOOD STUFF <ArrowRight size={15} /></button>
+                </motion.div>
               ) : (
                 <form className="checkout-form" onSubmit={submitOrder}>
                   <CustomerFields customer={customer} setCustomer={setCustomer} />
-                  <div className="checkout-total"><span>Your feel-good total</span><strong><NumberFlow value={subtotal} locales="fr-MA" format={{ maximumFractionDigits: 2 }} /> DH</strong></div>
+                  <PromoCodeField
+                    id="checkout-discount-code"
+                    value={couponInput}
+                    feedback={couponFeedback}
+                    applied={discountCode === "zosmy2027"}
+                    onChange={updateCouponInput}
+                    onApply={applyCoupon}
+                  />
+                  <div className="checkout-total">
+                    <span>{discountCode ? "Your total after 10% off" : "Your feel-good total"}</span>
+                    <strong><NumberFlow value={checkoutTotal} locales="fr-MA" format={{ maximumFractionDigits: 2 }} /> DH</strong>
+                  </div>
                   {orderStatus?.type === "error" && <p className="form-message" role="alert">{orderStatus.message}</p>}
-                  <button className="button button-dark checkout-button" type="submit" disabled={isSubmitting}>
-                    {isSubmitting ? "SAVING YOUR ORDER..." : "PLACE YOUR ORDER"} <ArrowRight size={15} />
+                  <button className="button button-dark checkout-button" type="submit" disabled={isSubmitting} aria-busy={isSubmitting}>
+                    {isSubmitting ? "SAVING YOUR ORDER..." : "PLACE YOUR ORDER"}
+                    <OrderButtonIcon isSubmitting={isSubmitting} />
                   </button>
                   <p className="checkout-disclaimer">Payment isn’t collected online. We’ll contact you to confirm delivery.</p>
                 </form>
               )}
+            </motion.section>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {guestReceipt && (
+          <motion.div
+            className="modal-backdrop tracking-modal-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.section
+              className="tracking-receipt"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="tracking-receipt-title"
+              initial={{ opacity: 0, y: 16, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12 }}
+            >
+              <button
+                className="icon-button modal-close"
+                type="button"
+                onClick={() => setGuestReceipt(null)}
+                aria-label="Close order confirmation"
+              ><X size={20} /></button>
+              <span className="tracking-receipt-check"><Check size={23} /></span>
+              <div className="eyebrow"><span className="eyebrow-line" /> ORDER RECEIVED</div>
+              <h2 id="tracking-receipt-title">Your order is on its way to us.</h2>
+              <p>Save this tracking number to check your order status anytime.</p>
+              <code className="tracking-code-display">{guestReceipt.trackingCode}</code>
+              <div className="tracking-receipt-actions">
+                <button
+                  className="tracking-copy-button"
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(guestReceipt.trackingCode);
+                      setCopiedTrackingCode(true);
+                    } catch (error) {
+                      console.error("Could not copy the tracking number.", error);
+                    }
+                  }}
+                >
+                  {copiedTrackingCode ? <Check size={15} /> : <Copy size={15} />}
+                  {copiedTrackingCode ? "COPIED" : "COPY NUMBER"}
+                </button>
+                <button
+                  className="button button-dark"
+                  type="button"
+                  onClick={() => openTrackingPage(guestReceipt.trackingCode)}
+                >TRACK ORDER <ArrowRight size={15} /></button>
+              </div>
             </motion.section>
           </motion.div>
         )}
@@ -769,6 +961,19 @@ function App() {
         >
           <BookOpen size={20} strokeWidth={1.8} />
           <span>Ritual</span>
+        </a>
+        <a
+          href="/account"
+          className={pathname === "/account" ? "mobile-tab active" : "mobile-tab"}
+          aria-current={pathname === "/account" ? "page" : undefined}
+          onClick={(event) => {
+            event.preventDefault();
+            setActiveMobileTab("account");
+            navigate("/account");
+          }}
+        >
+          <UserRound size={20} strokeWidth={1.8} />
+          <span>Account</span>
         </a>
         <button
           type="button"
@@ -1017,11 +1222,21 @@ function ProductDetail({
   setQuantity,
   customer,
   setCustomer,
+  couponInput,
+  discountCode,
+  couponFeedback,
+  onCouponInputChange,
+  onApplyCoupon,
   orderStatus,
   isSubmitting,
   onSubmit,
   onBack,
 }) {
+  const subtotal = product.price * quantity;
+  const total = discountCode === "zosmy2027"
+    ? Math.round(subtotal * 0.9 * 100) / 100
+    : subtotal;
+
   return (
     <section className="product-detail-page section-pad">
       <button className="text-link product-back-link" onClick={onBack}><ArrowRight size={14} /> BACK TO SHOP</button>
@@ -1065,18 +1280,43 @@ function ProductDetail({
                 <div className="quantity-control">
                   <button type="button" onClick={() => setQuantity((value) => Math.max(1, value - 1))} aria-label="Remove one"><Minus size={13} /></button>
                   <span>{quantity}</span>
-                  <button type="button" onClick={() => setQuantity((value) => value + 1)} aria-label="Add one"><Plus size={13} /></button>
+                  <button type="button" onClick={() => setQuantity((value) => Math.min(25, value + 1))} aria-label="Add one" disabled={quantity >= 25}><Plus size={13} /></button>
                 </div>
               </div>
               <div className="product-buy-fields">
                 <span className="product-fields-title">WHERE SHOULD WE SEND IT?</span>
                 <CustomerFields customer={customer} setCustomer={setCustomer} />
               </div>
-              <div className="checkout-total"><span>Your feel-good total</span><strong><NumberFlow value={product.price * quantity} locales="fr-MA" format={{ maximumFractionDigits: 2 }} /> DH</strong></div>
-              {orderStatus?.type === "success" && <p className="order-inline-success" role="status">{orderStatus.message}</p>}
+              <PromoCodeField
+                id="product-discount-code"
+                value={couponInput}
+                feedback={couponFeedback}
+                applied={discountCode === "zosmy2027"}
+                onChange={onCouponInputChange}
+                onApply={onApplyCoupon}
+              />
+              <div className="checkout-total">
+                <span>{discountCode ? "Your total after 10% off" : "Your feel-good total"}</span>
+                <strong><NumberFlow value={total} locales="fr-MA" format={{ maximumFractionDigits: 2 }} /> DH</strong>
+              </div>
+              <AnimatePresence>
+                {orderStatus?.type === "success" && (
+                  <motion.p
+                    className="order-inline-success"
+                    role="status"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    transition={{ duration: 0.25 }}
+                  >
+                    {orderStatus.message}
+                  </motion.p>
+                )}
+              </AnimatePresence>
               {orderStatus?.type === "error" && <p className="form-message" role="alert">{orderStatus.message}</p>}
-              <button className="button button-dark checkout-button" type="submit" disabled={isSubmitting || orderStatus?.type === "success"}>
-                {isSubmitting ? "SENDING YOUR ORDER..." : orderStatus?.type === "success" ? "ORDER RECEIVED" : "ORDER THIS PRODUCT"} <ArrowRight size={15} />
+              <button className="button button-dark checkout-button" type="submit" disabled={isSubmitting || orderStatus?.type === "success"} aria-busy={isSubmitting}>
+                {isSubmitting ? "SAVING YOUR ORDER..." : orderStatus?.type === "success" ? "ORDER RECEIVED" : "ORDER THIS PRODUCT"}
+                <OrderButtonIcon isSubmitting={isSubmitting} isComplete={orderStatus?.type === "success"} />
               </button>
               <p className="checkout-disclaimer">No online payment needed. We’ll contact you to confirm delivery.</p>
             </form>
@@ -1086,6 +1326,32 @@ function ProductDetail({
       </div>
     </section>
   );
+}
+
+function OrderButtonIcon({ isSubmitting, isComplete = false }) {
+  if (isSubmitting) {
+    return (
+      <motion.span
+        className="order-button-spinner"
+        aria-hidden="true"
+        animate={{ rotate: 360 }}
+        transition={{ duration: 0.8, ease: "linear", repeat: Infinity }}
+      />
+    );
+  }
+  if (isComplete) {
+    return (
+      <motion.span
+        className="order-button-complete"
+        initial={{ scale: 0.5 }}
+        animate={{ scale: 1 }}
+        transition={{ type: "spring", stiffness: 300, damping: 15 }}
+      >
+        <Check size={16} aria-hidden="true" />
+      </motion.span>
+    );
+  }
+  return <ArrowRight size={15} aria-hidden="true" />;
 }
 
 function CustomerFields({ customer, setCustomer }) {
@@ -1100,6 +1366,37 @@ function CustomerFields({ customer, setCustomer }) {
       <label>EMAIL ADDRESS (OPTIONAL)<input type="email" value={customer.email} onChange={(event) => update("email", event.target.value)} autoComplete="email" maxLength={254} /></label>
       <label>DELIVERY ADDRESS<input value={customer.address} onChange={(event) => update("address", event.target.value)} autoComplete="street-address" maxLength={200} required /></label>
       <label>CITY<input value={customer.city} onChange={(event) => update("city", event.target.value)} autoComplete="address-level2" maxLength={100} required /></label>
+    </div>
+  );
+}
+
+function PromoCodeField({ id, value, feedback, applied, onChange, onApply }) {
+  return (
+    <div className="promo-code-field">
+      <label htmlFor={id}>DISCOUNT CODE</label>
+      <div className="promo-code-controls">
+        <input
+          id={id}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              onApply();
+            }
+          }}
+          placeholder="Enter discount code"
+          autoCapitalize="none"
+          autoComplete="off"
+          maxLength={40}
+        />
+        <button type="button" onClick={onApply} disabled={applied}>APPLY</button>
+      </div>
+      {feedback && (
+        <span className={applied ? "promo-feedback applied" : "promo-feedback"} role="status">
+          {feedback}
+        </span>
+      )}
     </div>
   );
 }

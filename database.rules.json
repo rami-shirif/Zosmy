@@ -1,0 +1,198 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "admins": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": false
+      }
+    },
+    "orders": {
+      ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || (query.orderByChild === 'ownerUid' && query.equalTo === auth.uid))",
+      ".indexOn": ["createdAt", "telegramStatus", "ownerUid"],
+      "$orderId": {
+        ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || data.child('ownerUid').val() === auth.uid)",
+        ".write": "!data.exists() && newData.hasChildren(['customer', 'items', 'status', 'telegramStatus', 'createdAt', 'trackingCode', 'discountCode']) && newData.child('trackingCode').isString() && newData.child('trackingCode').val().matches(/^[2-9A-HJ-NP-Z]{20}$/) && newData.child('status').val() === 'new' && newData.child('telegramStatus').val() === 'pending' && ((auth != null && newData.child('ownerUid').val() === auth.uid) || (auth === null && !newData.child('ownerUid').exists()))",
+        ".validate": "newData.hasChildren(['customer', 'items', 'status', 'telegramStatus', 'createdAt']) && (!newData.child('ownerUid').exists() || newData.child('ownerUid').isString()) && (!newData.child('trackingCode').exists() || newData.child('trackingCode').val().matches(/^[2-9A-HJ-NP-Z]{20}$/)) && (!newData.child('discountCode').exists() || newData.child('discountCode').val() === '' || newData.child('discountCode').val() === 'zosmy2027')",
+        "ownerUid": {
+          ".validate": true
+        },
+        "trackingCode": {
+          ".validate": "newData.isString() && newData.val().matches(/^[2-9A-HJ-NP-Z]{20}$/)"
+        },
+        "discountCode": {
+          ".validate": "newData.val() === '' || newData.val() === 'zosmy2027'"
+        },
+        "status": {
+          ".write": "auth != null && root.child('admins').child(auth.uid).exists()",
+          ".validate": "newData.val() === 'new' || newData.val() === 'confirmed' || newData.val() === 'delivered' || newData.val() === 'cancelled'"
+        },
+        "customer": {
+          ".validate": "newData.hasChildren(['name', 'phone', 'email', 'address', 'city']) && newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('name').val().length <= 100 && newData.child('phone').isString() && newData.child('phone').val().length > 0 && newData.child('phone').val().length <= 30 && newData.child('email').isString() && newData.child('email').val().length <= 254 && newData.child('address').isString() && newData.child('address').val().length > 0 && newData.child('address').val().length <= 200 && newData.child('city').isString() && newData.child('city').val().length > 0 && newData.child('city').val().length <= 100",
+          "name": {
+            ".validate": true
+          },
+          "phone": {
+            ".validate": true
+          },
+          "email": {
+            ".validate": true
+          },
+          "address": {
+            ".validate": true
+          },
+          "city": {
+            ".validate": true
+          },
+          "$other": {
+            ".validate": false
+          }
+        },
+        "items": {
+          ".validate": "newData.hasChildren()",
+          "dew-drops": {
+            ".validate": "newData.hasChildren(['quantity', 'unitPrice']) && newData.child('quantity').isNumber() && newData.child('quantity').val() % 1 === 0 && newData.child('quantity').val() >= 1 && newData.child('quantity').val() <= 25 && newData.child('unitPrice').val() === 38",
+            "quantity": {
+              ".validate": true
+            },
+            "unitPrice": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
+          },
+          "cloud-cream": {
+            ".validate": "newData.hasChildren(['quantity', 'unitPrice']) && newData.child('quantity').isNumber() && newData.child('quantity').val() % 1 === 0 && newData.child('quantity').val() >= 1 && newData.child('quantity').val() <= 25 && newData.child('unitPrice').val() === 32",
+            "quantity": {
+              ".validate": true
+            },
+            "unitPrice": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
+          },
+          "soft-focus": {
+            ".validate": "newData.hasChildren(['quantity', 'unitPrice']) && newData.child('quantity').isNumber() && newData.child('quantity').val() % 1 === 0 && newData.child('quantity').val() >= 1 && newData.child('quantity').val() <= 25 && newData.child('unitPrice').val() === 29",
+            "quantity": {
+              ".validate": true
+            },
+            "unitPrice": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
+          },
+          "body-oil": {
+            ".validate": "newData.hasChildren(['quantity', 'unitPrice']) && newData.child('quantity').isNumber() && newData.child('quantity').val() % 1 === 0 && newData.child('quantity').val() >= 1 && newData.child('quantity').val() <= 25 && newData.child('unitPrice').val() === 34",
+            "quantity": {
+              ".validate": true
+            },
+            "unitPrice": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
+          },
+          "ritual-set": {
+            ".validate": "newData.hasChildren(['quantity', 'unitPrice']) && newData.child('quantity').isNumber() && newData.child('quantity').val() % 1 === 0 && newData.child('quantity').val() >= 1 && newData.child('quantity').val() <= 25 && newData.child('unitPrice').val() === 82",
+            "quantity": {
+              ".validate": true
+            },
+            "unitPrice": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
+          },
+          "lip-balm": {
+            ".validate": "newData.hasChildren(['quantity', 'unitPrice']) && newData.child('quantity').isNumber() && newData.child('quantity').val() % 1 === 0 && newData.child('quantity').val() >= 1 && newData.child('quantity').val() <= 25 && newData.child('unitPrice').val() === 18",
+            "quantity": {
+              ".validate": true
+            },
+            "unitPrice": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
+          },
+          "$other": {
+            ".validate": false
+          }
+        },
+        "telegramStatus": {
+          ".validate": "newData.val() === 'pending'"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber() && newData.val() <= now"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "orderTracking": {
+      "$trackingCode": {
+        ".read": "$trackingCode.matches(/^[2-9A-HJ-NP-Z]{20}$/)",
+        ".write": "(!data.exists() && $trackingCode.matches(/^[2-9A-HJ-NP-Z]{20}$/) && newData.child('status').val() === 'new') || (auth != null && root.child('admins').child(auth.uid).exists())",
+        ".validate": "newData.hasChildren(['status', 'createdAt', 'total', 'discountCode', 'items'])",
+        "status": {
+          ".validate": "newData.val() === 'new' || newData.val() === 'confirmed' || newData.val() === 'delivered' || newData.val() === 'cancelled'"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber() && newData.val() <= now"
+        },
+        "total": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "discountCode": {
+          ".validate": "newData.val() === '' || newData.val() === 'zosmy2027'"
+        },
+        "items": {
+          ".validate": "newData.hasChildren()",
+          "dew-drops": {
+            ".validate": "newData.hasChildren(['quantity']) && newData.child('quantity').isNumber() && newData.child('quantity').val() % 1 === 0 && newData.child('quantity').val() >= 1 && newData.child('quantity').val() <= 25",
+            "quantity": { ".validate": true },
+            "$other": { ".validate": false }
+          },
+          "cloud-cream": {
+            ".validate": "newData.hasChildren(['quantity']) && newData.child('quantity').isNumber() && newData.child('quantity').val() % 1 === 0 && newData.child('quantity').val() >= 1 && newData.child('quantity').val() <= 25",
+            "quantity": { ".validate": true },
+            "$other": { ".validate": false }
+          },
+          "soft-focus": {
+            ".validate": "newData.hasChildren(['quantity']) && newData.child('quantity').isNumber() && newData.child('quantity').val() % 1 === 0 && newData.child('quantity').val() >= 1 && newData.child('quantity').val() <= 25",
+            "quantity": { ".validate": true },
+            "$other": { ".validate": false }
+          },
+          "body-oil": {
+            ".validate": "newData.hasChildren(['quantity']) && newData.child('quantity').isNumber() && newData.child('quantity').val() % 1 === 0 && newData.child('quantity').val() >= 1 && newData.child('quantity').val() <= 25",
+            "quantity": { ".validate": true },
+            "$other": { ".validate": false }
+          },
+          "ritual-set": {
+            ".validate": "newData.hasChildren(['quantity']) && newData.child('quantity').isNumber() && newData.child('quantity').val() % 1 === 0 && newData.child('quantity').val() >= 1 && newData.child('quantity').val() <= 25",
+            "quantity": { ".validate": true },
+            "$other": { ".validate": false }
+          },
+          "lip-balm": {
+            ".validate": "newData.hasChildren(['quantity']) && newData.child('quantity').isNumber() && newData.child('quantity').val() % 1 === 0 && newData.child('quantity').val() >= 1 && newData.child('quantity').val() <= 25",
+            "quantity": { ".validate": true },
+            "$other": { ".validate": false }
+          },
+          "$other": { ".validate": false }
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    }
+  }
+}

@@ -6,8 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview",
-    "secrets:telegram": "node scripts/push-telegram-secrets.mjs"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@number-flow/react": "^0.5.10",
