@@ -8,6 +8,7 @@ import {
   updateOrderStatus,
 } from "./firebase";
 import { products } from "./products";
+import { calculateOrderTotal } from "./orderPricing";
 
 const orderStatuses = ["new", "confirmed", "delivered", "cancelled"];
 const orderFilters = ["all", ...orderStatuses];
@@ -270,9 +271,7 @@ export default function AdminPage() {
                     (sum, [, item]) => sum + item.unitPrice * item.quantity,
                     0,
                   );
-                  const total = order.discountCode === "zosmy2027"
-                    ? Math.round(subtotal * 0.9 * 100) / 100
-                    : subtotal;
+                  const total = calculateOrderTotal(subtotal, order.discountCode);
                   return (
                     <article className="admin-order-card" key={order.id}>
                       <div className="admin-order-top">

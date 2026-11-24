@@ -8,6 +8,7 @@ import {
   subscribeToOrderTracking,
 } from "./firebase";
 import { products } from "./products";
+import { calculateOrderTotal } from "./orderPricing";
 
 const productById = new Map(products.map((product) => [product.id, product]));
 const orderProgress = [
@@ -174,9 +175,7 @@ export default function AccountPage({ user, authError, initialTrackingCode = "" 
               {orders.map((order) => {
                 const items = Object.entries(order.items || {});
                 const subtotal = items.reduce((sum, [, item]) => sum + item.unitPrice * item.quantity, 0);
-                const total = order.discountCode === "zosmy2027"
-                  ? Math.round(subtotal * 0.9 * 100) / 100
-                  : subtotal;
+                const total = calculateOrderTotal(subtotal, order.discountCode);
                 const status = order.status || "new";
                 const currentProgress = orderProgress.findIndex((step) => step.status === status);
                 return (

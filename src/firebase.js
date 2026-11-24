@@ -20,6 +20,7 @@ import {
   ref,
   update,
 } from "firebase/database";
+import { calculateOrderTotal } from "./orderPricing";
 
 const trackingAlphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 
@@ -91,9 +92,7 @@ export async function createOrder({ customer, items, ownerUid, discountCode = ""
     ? "zosmy2027"
     : "";
   const subtotal = items.reduce((total, item) => total + item.unitPrice * item.quantity, 0);
-  const total = appliedDiscountCode
-    ? Math.round(subtotal * 0.9 * 100) / 100
-    : subtotal;
+  const total = calculateOrderTotal(subtotal, appliedDiscountCode);
   const trackingCode = createTrackingCode();
   const orderRef = push(ref(db, "orders"));
   if (!orderRef.key) throw new Error("Could not create an order ID.");

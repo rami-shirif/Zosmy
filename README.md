@@ -22,10 +22,10 @@ Orders are stored in Firebase Realtime Database and can be reviewed at `/admin`.
 
 ## Telegram notifications
 
-When a customer submits an order, the storefront first saves it to Realtime Database, then sends only the order ID to the Apps Script web app. Apps Script fetches the saved order from Realtime Database and sends its customer, product, tracking number, discount, and final total details to Telegram. A timer trigger remains as a backup for pending orders if the immediate request fails.
+When a customer submits an order, the storefront saves it to Realtime Database and Apps Script sends that new order to Telegram. The bot no longer provides order-list commands or status buttons. The one-minute trigger silently retries pending notifications; it sends a message only when it successfully processes a pending order.
 
 1. In Firebase, copy the Realtime Database URL shown on the database page.
-2. Open the Firebase project's Google Cloud project in [Google Cloud Console](https://console.cloud.google.com/). In **IAM & Admin → IAM**, grant the Google account that will own/run Apps Script the **Firebase Realtime Database Admin** role. Apps Script runs as that account to read orders and mark notifications as sent.
+2. Open the Firebase project's Google Cloud project in [Google Cloud Console](https://console.cloud.google.com/). In **IAM & Admin → IAM**, grant the Google account that will own/run Apps Script the **Firebase Realtime Database Admin** role. Apps Script runs as that account to read orders and mark notifications as sent. This path does not use Firebase Functions or require Blaze.
 3. Create a project at [Google Apps Script](https://script.google.com/). In **Project Settings**, link the script to the same Google Cloud project as Firebase. In the editor, replace `Code.gs` with `apps-script/Code.gs`; show and replace `appsscript.json` with `apps-script/appsscript.json`. Redeploy the web app as a new version after changing `Code.gs`.
 4. In **Project Settings → Script Properties**, add:
    - `FIREBASE_DATABASE_URL`: the Realtime Database URL copied in step 1.
@@ -35,8 +35,9 @@ When a customer submits an order, the storefront first saves it to Realtime Data
    Keep the Telegram token in Script Properties, not in the storefront or repository.
 5. In Apps Script, select `setupOrderNotifications` and click **Run** once. Review and approve the requested Firebase Database, email identity, and external request permissions. This installs a one-minute backup trigger.
 6. Select **Deploy → New deployment → Web app**, set **Execute as** to yourself and **Who has access** to anyone, then deploy. Copy the web app URL ending in `/exec`.
-7. Add that URL to `.env.local` as `VITE_GOOGLE_APPS_SCRIPT_URL`, restart Vite or rebuild and redeploy the storefront. If you already deployed the storefront before, rebuild it after adding this setting.
-8. To test, run `testTelegramNotification` to check Telegram and `testFirebaseConnection` to check Firebase access. Check **Executions** for logs. Submit a new test order; Telegram should receive it shortly.
+7. Add the Apps Script `/exec` URL to `.env.local` as `VITE_GOOGLE_APPS_SCRIPT_URL`.
+8. If you previously enabled the Telegram order menu or webhook, redeploy the updated Apps Script as a new version. Run `disableTelegramOrderMenu` once in the Apps Script editor to remove the webhook, `/start` and `/orders` commands, and custom menu button. You do not need Cloudflare or Firebase Functions for order notifications.
+9. Test by submitting a new order. Telegram should receive that order only. Run `testTelegramNotification` to test Telegram delivery and check Apps Script **Executions** for errors. The retry trigger remains silent unless it sends a pending order notification.
 
 New Realtime Database orders start with `telegramStatus: pending`. After sending a message, the script updates that order to `sent`. If the immediate request fails, the order stays pending and the backup trigger retries it. Check the Apps Script **Executions** page and logs for errors. The admin page updates live and shows the notification status.
 

@@ -23,12 +23,14 @@ import {
   X,
 } from "lucide-react";
 import { requestOrderNotification } from "./orderNotification";
+import { calculateOrderTotal } from "./orderPricing";
 import { products } from "./products";
 
 const AdminPage = lazy(() => import("./AdminPage"));
 const AccountPage = lazy(() => import("./AccountPage"));
 const categories = ["All", "Skincare", "Body care", "Sets"];
 const popularProducts = products.filter((product) => product.badge);
+const featuredProduct = products[0];
 const CART_STORAGE_KEY = "zosmy-bag";
 const testimonials = [
   {
@@ -216,9 +218,7 @@ function App() {
     (total, item) => total + item.product.price * item.quantity,
     0,
   );
-  const checkoutTotal = discountCode === "zosmy2027"
-    ? Math.round(subtotal * 0.9 * 100) / 100
-    : subtotal;
+  const checkoutTotal = calculateOrderTotal(subtotal, discountCode);
 
   function applyCoupon() {
     if (couponInput.trim().toLowerCase() === "zosmy2027") {
@@ -302,13 +302,16 @@ function App() {
         type: "success",
         message: successMessage,
         trackingCode,
-        total: items.reduce((sum, item) => sum + item.product.price * item.quantity, 0) * (discountCode ? 0.9 : 1),
+        total: calculateOrderTotal(
+          items.reduce((sum, item) => sum + item.product.price * item.quantity, 0),
+          discountCode,
+        ),
       });
-      if (!currentUser) {
-        setGuestReceipt({ trackingCode });
-        setCheckoutOpen(false);
-        setCartOpen(false);
-      }
+      setCustomer({ name: "", phone: "", email: "", address: "", city: "" });
+      updateCouponInput("");
+      setGuestReceipt({ trackingCode });
+      setCheckoutOpen(false);
+      setCartOpen(false);
     } catch (error) {
       console.error("Could not submit the order.", error);
       setOrderStatus({
@@ -454,23 +457,34 @@ function App() {
           </div>
           <motion.div
             className="hero-image-wrap"
+            style={{ backgroundColor: featuredProduct.tone }}
             initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 1, ease: "easeOut" }}
           >
-            <img
-              className="hero-image"
-              src="https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?auto=format&fit=crop&w=1600&q=90"
-              alt="A calm, sunlit skincare ritual"
-            />
-            <div className="hero-sticker">
-              <span>GOOD SKIN</span>
-              <Sparkles size={16} />
-              <span>GOOD MOOD</span>
-            </div>
-            <div className="image-caption">
-              <span>01 / 03</span>
-              <span>YOUR EVERYDAY, ELEVATED</span>
+            <a
+              className="hero-image-link"
+              href={`/products/${featuredProduct.id}`}
+              aria-label={`View ${featuredProduct.name}`}
+              onClick={(event) => { event.preventDefault(); navigate(`/products/${featuredProduct.id}`); }}
+            >
+              <img className="hero-image" src={featuredProduct.image} alt={featuredProduct.name} />
+            </a>
+            <span className="hero-product-tag">{featuredProduct.badge || "DAILY ESSENTIAL"}</span>
+            <div className="hero-product-caption">
+              <div className="hero-product-copy">
+                <span>THE EVERYDAY FAVORITE</span>
+                <strong>{featuredProduct.name}</strong>
+                <small>{featuredProduct.description}</small>
+              </div>
+              <div className="hero-product-action">
+                <span>{formatDirhams(featuredProduct.price)}</span>
+                <button
+                  type="button"
+                  aria-label={`Add ${featuredProduct.name} to bag`}
+                  onClick={() => addToBag(featuredProduct)}
+                ><Plus size={18} /></button>
+              </div>
             </div>
           </motion.div>
           <a className="scroll-cue" href="#shop" aria-label="Scroll to shop">
@@ -569,9 +583,9 @@ function App() {
                   <div className="product-info">
                     <div className="product-name-row">
                       <h3><a href={`/products/${product.id}`} onClick={(event) => { event.preventDefault(); navigate(`/products/${product.id}`); }}>{product.name}</a></h3>
-                      <span>{formatDirhams(product.price)}</span>
+                      <span className="product-price">{formatDirhams(product.price)}</span>
                     </div>
-                    <p>{product.description}</p>
+                    <p className="product-description">{product.description}</p>
                     <a className="product-details-link" href={`/products/${product.id}`} onClick={(event) => { event.preventDefault(); navigate(`/products/${product.id}`); }}>VIEW PRODUCT <ArrowRight size={13} /></a>
                   </div>
                 </motion.article>
@@ -909,7 +923,7 @@ function App() {
                   className="button button-dark"
                   type="button"
                   onClick={() => openTrackingPage(guestReceipt.trackingCode)}
-                >TRACK ORDER <ArrowRight size={15} /></button>
+                >{currentUser ? "VIEW MY ORDERS" : "TRACK ORDER"} <ArrowRight size={15} /></button>
               </div>
             </motion.section>
           </motion.div>
@@ -1233,9 +1247,7 @@ function ProductDetail({
   onBack,
 }) {
   const subtotal = product.price * quantity;
-  const total = discountCode === "zosmy2027"
-    ? Math.round(subtotal * 0.9 * 100) / 100
-    : subtotal;
+  const total = calculateOrderTotal(subtotal, discountCode);
 
   return (
     <section className="product-detail-page section-pad">

@@ -25,6 +25,22 @@ function setupOrderNotifications() {
     .create();
 }
 
+function disableTelegramOrderMenu() {
+  const properties = PropertiesService.getScriptProperties();
+  if (!properties.getProperty("TELEGRAM_BOT_TOKEN")) {
+    throw new Error("Set TELEGRAM_BOT_TOKEN in Script Properties.");
+  }
+
+  telegramApiRequest("deleteWebhook", { drop_pending_updates: true });
+  telegramApiRequest("deleteMyCommands", {});
+  telegramApiRequest("setChatMenuButton", {
+    menu_button: { type: "default" },
+  });
+  properties.deleteProperty("TELEGRAM_WEBHOOK_URL");
+  properties.deleteProperty("TELEGRAM_WEBHOOK_SECRET");
+  console.log("Telegram order menu and webhook disabled. New-order notifications remain enabled.");
+}
+
 function testFirebaseConnection() {
   const databaseUrl = PropertiesService.getScriptProperties()
     .getProperty("FIREBASE_DATABASE_URL");
@@ -46,14 +62,15 @@ function testTelegramNotification() {
 function doPost(event) {
   try {
     const request = JSON.parse(event.postData.contents);
+    if (!request.orderId) return jsonResponse({ ok: true });
     if (typeof request.orderId !== "string" || !/^[A-Za-z0-9_-]+$/.test(request.orderId)) {
       throw new Error("A valid order ID is required.");
     }
 
     return jsonResponse({ ok: true, notified: processOrder(request.orderId) });
   } catch (error) {
-    console.error(`Immediate order notification failed: ${error.message || error}`);
-    return jsonResponse({ ok: false });
+    console.error(`Order notification request failed: ${error.message || error}`);
+    return jsonResponse({ ok: false, error: error.message || "Order notification failed." });
   }
 }
 
@@ -93,8 +110,8 @@ function processOrder(orderId) {
       0,
     );
     const discountCode = order.discountCode === "zosmy2027" ? "zosmy2027" : "";
-    const discount = discountCode ? Math.round(subtotal * 0.1 * 100) / 100 : 0;
-    const total = subtotal - discount;
+    const total = discountCode ? Math.round(subtotal * 0.9) : subtotal;
+    const discount = subtotal - total;
 
     sendTelegramOrder(orderId, customer, items, subtotal, discount, total, discountCode, order.trackingCode);
     updateTelegramStatus(databaseUrl, orderId, "sent");
@@ -219,22 +236,24 @@ function sendTelegramOrder(orderId, customer, items, subtotal, discount, total, 
 }
 
 function sendTelegramMessage(text) {
-  const properties = PropertiesService.getScriptProperties();
-  const token = properties.getProperty("TELEGRAM_BOT_TOKEN");
-  const chatId = properties.getProperty("TELEGRAM_CHAT_ID");
-  if (!token || !chatId) {
-    throw new Error("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in Script Properties.");
-  }
+  const chatId = PropertiesService.getScriptProperties().getProperty("TELEGRAM_CHAT_ID");
+  if (!chatId) throw new Error("Set TELEGRAM_CHAT_ID in Script Properties.");
+  telegramApiRequest("sendMessage", {
+    chat_id: chatId,
+    text,
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  });
+}
 
-  const response = UrlFetchApp.fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+function telegramApiRequest(method, payload) {
+  const token = PropertiesService.getScriptProperties().getProperty("TELEGRAM_BOT_TOKEN");
+  if (!token) throw new Error("Set TELEGRAM_BOT_TOKEN in Script Properties.");
+
+  const response = UrlFetchApp.fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: "post",
     contentType: "application/json",
-    payload: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    }),
+    payload: JSON.stringify(payload),
     muteHttpExceptions: true,
   });
   let result;
@@ -246,6 +265,7 @@ function sendTelegramMessage(text) {
   if (response.getResponseCode() !== 200 || !result.ok) {
     throw new Error(result.description || `Telegram rejected the message (HTTP ${response.getResponseCode()}).`);
   }
+  return result;
 }
 
 function formatOrder(customer, items, subtotal, discount, total, discountCode, orderId, trackingCode) {
