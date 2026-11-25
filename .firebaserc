@@ -1,11 +1,14 @@
+
 {
-  "projects": { "default": "flamif-af5ba" },
+  "projects": {
+    "default": "flamif-af5ba"
+  },
   "targets": {
     "flamif-af5ba": {
-       "hosting": {  
-          "zosmy": [
+      "hosting": {
+        "zosmy": [
           "zosmy"
-  
+        ]
       }
     }
   }
