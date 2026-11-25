@@ -10,7 +10,11 @@
     },
     "orders": {
       ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || (query.orderByChild === 'ownerUid' && query.equalTo === auth.uid))",
-      ".indexOn": ["createdAt", "telegramStatus", "ownerUid"],
+      ".indexOn": [
+        "createdAt",
+        "telegramStatus",
+        "ownerUid"
+      ],
       "$orderId": {
         ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || data.child('ownerUid').val() === auth.uid)",
         ".write": "!data.exists() && newData.hasChildren(['customer', 'items', 'status', 'telegramStatus', 'createdAt', 'trackingCode', 'discountCode']) && newData.child('trackingCode').isString() && newData.child('trackingCode').val().matches(/^[2-9A-HJ-NP-Z]{20}$/) && newData.child('status').val() === 'new' && newData.child('telegramStatus').val() === 'pending' && ((auth != null && newData.child('ownerUid').val() === auth.uid) || (auth === null && !newData.child('ownerUid').exists()))",
@@ -123,8 +127,17 @@
               ".validate": false
             }
           },
-          "$other": {
-            ".validate": false
+          "$productId": {
+            ".validate": "newData.hasChildren(['quantity']) && newData.child('quantity').isNumber() && newData.child('quantity').val() % 1 === 0 && newData.child('quantity').val() >= 1 && newData.child('quantity').val() <= 25",
+            "quantity": {
+              ".validate": true
+            },
+            "unitPrice": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
           }
         },
         "telegramStatus": {
@@ -159,39 +172,81 @@
           ".validate": "newData.hasChildren()",
           "dew-drops": {
             ".validate": "newData.hasChildren(['quantity']) && newData.child('quantity').isNumber() && newData.child('quantity').val() % 1 === 0 && newData.child('quantity').val() >= 1 && newData.child('quantity').val() <= 25",
-            "quantity": { ".validate": true },
-            "$other": { ".validate": false }
+            "quantity": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
           },
           "cloud-cream": {
             ".validate": "newData.hasChildren(['quantity']) && newData.child('quantity').isNumber() && newData.child('quantity').val() % 1 === 0 && newData.child('quantity').val() >= 1 && newData.child('quantity').val() <= 25",
-            "quantity": { ".validate": true },
-            "$other": { ".validate": false }
+            "quantity": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
           },
           "soft-focus": {
             ".validate": "newData.hasChildren(['quantity']) && newData.child('quantity').isNumber() && newData.child('quantity').val() % 1 === 0 && newData.child('quantity').val() >= 1 && newData.child('quantity').val() <= 25",
-            "quantity": { ".validate": true },
-            "$other": { ".validate": false }
+            "quantity": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
           },
           "body-oil": {
             ".validate": "newData.hasChildren(['quantity']) && newData.child('quantity').isNumber() && newData.child('quantity').val() % 1 === 0 && newData.child('quantity').val() >= 1 && newData.child('quantity').val() <= 25",
-            "quantity": { ".validate": true },
-            "$other": { ".validate": false }
+            "quantity": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
           },
           "ritual-set": {
             ".validate": "newData.hasChildren(['quantity']) && newData.child('quantity').isNumber() && newData.child('quantity').val() % 1 === 0 && newData.child('quantity').val() >= 1 && newData.child('quantity').val() <= 25",
-            "quantity": { ".validate": true },
-            "$other": { ".validate": false }
+            "quantity": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
           },
           "lip-balm": {
             ".validate": "newData.hasChildren(['quantity']) && newData.child('quantity').isNumber() && newData.child('quantity').val() % 1 === 0 && newData.child('quantity').val() >= 1 && newData.child('quantity').val() <= 25",
-            "quantity": { ".validate": true },
-            "$other": { ".validate": false }
+            "quantity": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
           },
-          "$other": { ".validate": false }
+          "$productId": {
+            ".validate": "newData.hasChildren(['quantity']) && newData.child('quantity').isNumber() && newData.child('quantity').val() % 1 === 0 && newData.child('quantity').val() >= 1 && newData.child('quantity').val() <= 25",
+            "quantity": {
+              ".validate": true
+            },
+            "unitPrice": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
         },
         "$other": {
           ".validate": false
         }
+      }
+    },
+    "products": {
+      ".read": true,
+      "$productId": {
+        ".write": "auth != null && root.child('admins').child(auth.uid).exists()",
+        ".validate": "newData.hasChildren(['name','description','price','category','image']) && newData.child('name').isString() && newData.child('description').isString() && newData.child('price').isNumber() && newData.child('price').val() > 0 && newData.child('category').isString() && newData.child('image').isString()"
       }
     }
   }

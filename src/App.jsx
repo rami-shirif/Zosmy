@@ -24,13 +24,11 @@ import {
 } from "lucide-react";
 import { requestOrderNotification } from "./orderNotification";
 import { calculateOrderTotal } from "./orderPricing";
-import { products } from "./products";
+import { products as defaultProducts } from "./products";
 
 const AdminPage = lazy(() => import("./AdminPage"));
 const AccountPage = lazy(() => import("./AccountPage"));
 const categories = ["All", "Skincare", "Body care", "Sets"];
-const popularProducts = products.filter((product) => product.badge);
-const featuredProduct = products[0];
 const CART_STORAGE_KEY = "zosmy-bag";
 const testimonials = [
   {
@@ -55,7 +53,7 @@ const reveal = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.65, ease: [0.2, 0.65, 0.3, 0.9] } },
 };
 
-function readSavedCart() {
+function readSavedCart(catalog = defaultProducts) {
   let serialized;
   try {
     serialized = window.localStorage.getItem(CART_STORAGE_KEY);
@@ -89,7 +87,7 @@ function readSavedCart() {
       return restored;
     }
 
-    const product = products.find((candidate) => candidate.id === item.productId);
+    const product = catalog.find((candidate) => candidate.id === item.productId);
     if (!product) {
       console.warn("Ignoring a saved bag item for an unknown product.", item.productId);
       return restored;
@@ -113,7 +111,8 @@ function App() {
   const [guestReceipt, setGuestReceipt] = useState(null);
   const [trackingCodeForAccount, setTrackingCodeForAccount] = useState(() => new URLSearchParams(window.location.search).get("tracking") || "");
   const [copiedTrackingCode, setCopiedTrackingCode] = useState(false);
-  const [cart, setCart] = useState(readSavedCart);
+  const [products, setProducts] = useState(defaultProducts);
+  const [cart, setCart] = useState(() => readSavedCart(defaultProducts));
   const [cartOpen, setCartOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [customer, setCustomer] = useState({
@@ -131,6 +130,8 @@ function App() {
   const [bagNotice, setBagNotice] = useState(null);
   const bagNoticeId = useRef(0);
   const bagButtonControls = useAnimationControls();
+  const popularProducts = products.filter((product) => product.badge);
+  const featuredProduct = products[0] || defaultProducts[0];
   const selectedProduct = products.find(
     (product) => pathname === `/products/${product.id}`,
   );
@@ -145,6 +146,34 @@ function App() {
       .catch((error) => {
         console.error("Could not initialize customer account state.", error);
         if (active) setAuthError(error.message || "Could not connect to customer accounts.");
+      });
+    return () => {
+      active = false;
+      unsubscribe?.();
+    };
+  }, []);
+
+  // Keep the public storefront in sync with the Firebase product catalog.
+  // If Firebase is not configured or temporarily unavailable, retain bundled products.
+  useEffect(() => {
+    let active = true;
+    let unsubscribe;
+    import("./firebase")
+      .then(({ subscribeToProducts }) => {
+        if (!active) return;
+        unsubscribe = subscribeToProducts((remoteProducts) => {
+          if (!active || !remoteProducts.length) return;
+          setProducts(remoteProducts);
+          setCart((currentCart) => currentCart.map((item) => {
+            const latest = remoteProducts.find((product) => product.id === item.product.id);
+            return latest ? { ...item, product: latest } : item;
+          }).filter((item) => remoteProducts.some((product) => product.id === item.product.id)));
+        }, (error) => {
+          console.error("Could not load the live product catalog; using bundled products.", error);
+        });
+      })
+      .catch((error) => {
+        console.error("Could not initialize the live product catalog; using bundled products.", error);
       });
     return () => {
       active = false;
@@ -211,7 +240,7 @@ function App() {
       category === "All"
         ? products
         : products.filter((product) => product.category === category),
-    [category],
+    [category, products],
   );
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0);
   const subtotal = cart.reduce(
@@ -650,7 +679,7 @@ function App() {
           </div>
         </motion.section>
 
-        <RoutineFinder onAdd={addToBag} onOpen={(product) => navigate(`/products/${product.id}`)} />
+        <RoutineFinder products={products} onAdd={addToBag} onOpen={(product) => navigate(`/products/${product.id}`)} />
 
         <motion.section
           className="review-section section-pad"
@@ -1195,7 +1224,7 @@ function PopularProducts({ products: items, onAdd, onOpen }) {
   );
 }
 
-function RoutineFinder({ onAdd, onOpen }) {
+function RoutineFinder({ products, onAdd, onOpen }) {
   const [goal, setGoal] = useState("hydration");
   const recommendations = {
     hydration: ["dew-drops", "cloud-cream"],

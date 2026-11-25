@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, BarChart3, Check, Copy, LogOut, MessageCircle, Package, Search } from "lucide-react";
+import { ArrowLeft, BarChart3, Check, Copy, LogOut, MessageCircle, Package, Search, Plus, Trash2, Pencil, X } from "lucide-react";
 import {
   signInAdmin,
   signOutAdmin,
@@ -8,6 +8,9 @@ import {
   subscribeToAnalyticsOrders,
   subscribeToRecentOrders,
   updateOrderStatus,
+  subscribeToProducts,
+  saveProduct,
+  deleteProduct,
 } from "./firebase";
 import { products } from "./products";
 import { calculateOrderTotal } from "./orderPricing";
@@ -37,6 +40,88 @@ function formatDate(timestamp) {
   }).format(timestamp);
 }
 
+
+function ProductManager() {
+  const [items, setItems] = useState(products);
+  const [editing, setEditing] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const empty = { name: "", description: "", price: "", category: "Skincare", image: "", badge: "", tone: "#e7e5d7" };
+  const [form, setForm] = useState(empty);
+
+  useEffect(() => subscribeToProducts(async (remote) => {
+    if (remote.length) {
+      setItems(remote);
+      return;
+    }
+    // First-time migration: copy the six bundled products into Firebase so future
+    // additions and edits use one complete live catalog without losing existing items.
+    setItems(products);
+    try {
+      for (const product of products) await saveProduct(product);
+    } catch (err) {
+      setMessage(err.message || "Could not initialize the product catalog. Check Firebase rules.");
+    }
+  }, (err) => setMessage(err.message || "Could not load products.")), []);
+
+  function startEdit(product) {
+    setEditing(product.id);
+    setForm({ ...empty, ...product, price: String(product.price) });
+    setMessage("");
+  }
+
+  function startNew() {
+    setEditing(null);
+    setForm(empty);
+    setMessage("");
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    setSaving(true);
+    setMessage("");
+    const id = editing || form.name.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    try {
+      if (!id) throw new Error("Please enter a product title.");
+      const product = { id, name: form.name.trim(), description: form.description.trim(), price: Number(form.price), category: form.category, image: form.image.trim(), ...(form.badge.trim() ? { badge: form.badge.trim() } : {}), tone: form.tone || "#e7e5d7" };
+      if (!product.name || !product.description || !product.image || !Number.isFinite(product.price) || product.price <= 0) throw new Error("Complete all required fields with a valid price.");
+      await saveProduct(product);
+      setMessage("Product saved. It will appear in the store automatically.");
+      setEditing(null);
+      setForm(empty);
+    } catch (err) {
+      setMessage(err.message || "Could not save product. Check your Firebase database rules.");
+    } finally { setSaving(false); }
+  }
+
+  async function removeProduct(id) {
+    if (!window.confirm("Delete this product from the live catalog?")) return;
+    try {
+      await deleteProduct(id);
+      setMessage("Product deleted.");
+    } catch (err) { setMessage(err.message || "Could not delete product."); }
+  }
+
+  return <section className="admin-products">
+    <div className="admin-products-heading"><div><h2>Product catalog</h2><p>Add products using image paths from your GitHub repository.</p></div><button className="button button-dark" type="button" onClick={startNew}><Plus size={15}/> Add product</button></div>
+    <form className="admin-product-form" onSubmit={submit}>
+      <h3>{editing ? "Edit product" : "New product"}</h3>
+      <label>PRODUCT TITLE<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Rose Glow Serum" required /></label>
+      <label>DESCRIPTION<textarea value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="A short product description" required /></label>
+      <div className="admin-product-form-grid">
+        <label>PRICE (DH)<input type="number" min="0.01" step="0.01" value={form.price} onChange={e=>setForm({...form,price:e.target.value})} required /></label>
+        <label>CATEGORY<select value={form.category} onChange={e=>setForm({...form,category:e.target.value})}><option>Skincare</option><option>Body care</option><option>Sets</option></select></label>
+      </div>
+      <label>GITHUB IMAGE PATH<input value={form.image} onChange={e=>setForm({...form,image:e.target.value})} placeholder="/products/rose-glow.jpg" required /><small>Upload the image into the repository's public/products folder, then enter /products/filename.jpg</small></label>
+      {form.image && <div className="admin-product-preview"><img src={form.image} alt="Product preview" onError={e=>{e.currentTarget.style.display="none"}}/><span>Image preview</span></div>}
+      <label>BADGE (OPTIONAL)<input value={form.badge} onChange={e=>setForm({...form,badge:e.target.value})} placeholder="BESTSELLER" /></label>
+      <div className="admin-product-form-actions"><button className="button button-dark" disabled={saving} type="submit">{saving ? "Saving…" : editing ? "Save changes" : "Publish product"}</button>{editing && <button className="admin-action" type="button" onClick={startNew}>Cancel</button>}</div>
+    </form>
+    {message && <p className="admin-product-message" role="status">{message}</p>}
+    <div className="admin-product-list">{items.map(item=><article className="admin-product-row" key={item.id}><img src={item.image} alt="" /><div><strong>{item.name}</strong><span>{item.category} · {formatPrice(item.price)}</span><small>{item.image}</small></div><button type="button" className="admin-action" onClick={()=>startEdit(item)} aria-label={`Edit ${item.name}`}><Pencil size={15}/></button><button type="button" className="admin-action" onClick={()=>removeProduct(item.id)} aria-label={`Delete ${item.name}`}><Trash2 size={15}/></button></article>)}</div>
+  </section>;
+}
+
 export default function AdminPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -49,7 +134,7 @@ export default function AdminPage() {
   const [error, setError] = useState("");
   const [copiedOrderId, setCopiedOrderId] = useState("");
   const [tab, setTab] = useState(() =>
-    window.location.hash === "#orders" ? "orders" : "analytics",
+    window.location.hash === "#orders" ? "orders" : window.location.hash === "#products" ? "products" : "analytics",
   );
   const [analyticsOrders, setAnalyticsOrders] = useState([]);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
@@ -149,7 +234,7 @@ export default function AdminPage() {
 
   function selectTab(nextTab) {
     setTab(nextTab);
-    window.history.replaceState(null, "", nextTab === "orders" ? "#orders" : window.location.pathname);
+    window.history.replaceState(null, "", nextTab === "orders" ? "#orders" : nextTab === "products" ? "#products" : window.location.pathname);
   }
 
   async function handleLogin(event) {
@@ -273,7 +358,7 @@ export default function AdminPage() {
         <div className="admin-title-row">
           <div>
             <span className="eyebrow"><span className="eyebrow-line" /> Zosmy studio</span>
-            <h1>{admin ? (tab === "analytics" ? "Analytics" : "Orders") : "Admin sign in"}</h1>
+            <h1>{admin ? (tab === "analytics" ? "Analytics" : tab === "products" ? "Products" : "Orders") : "Admin sign in"}</h1>
           </div>
           {admin && (
             <div className="admin-actions">
@@ -326,8 +411,13 @@ export default function AdminPage() {
               <Package size={15} aria-hidden="true" /> Orders
               {orderCounts.new > 0 && <span className="admin-tab-badge">{orderCounts.new}</span>}
             </button>
+            <button type="button" className={tab === "products" ? "active" : ""} aria-current={tab === "products" ? "page" : undefined} onClick={() => selectTab("products")}>
+              <Pencil size={15} aria-hidden="true" /> Products
+            </button>
           </nav>
-          {tab === "analytics" ? (
+          {tab === "products" ? (
+            <ProductManager />
+          ) : tab === "analytics" ? (
             <Suspense fallback={<p className="admin-empty" role="status">Loading analytics…</p>}>
               <AnalyticsDashboard orders={analyticsOrders} isLoading={analyticsLoading} />
             </Suspense>

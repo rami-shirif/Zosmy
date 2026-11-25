@@ -17,6 +17,7 @@ import {
   orderByChild,
   push,
   query,
+  remove,
   ref,
   update,
 } from "firebase/database";
@@ -252,4 +253,31 @@ export async function updateOrderStatus(orderId, status, trackingCode) {
   const updates = { [`orders/${orderId}/status`]: status };
   if (trackingCode) updates[`orderTracking/${trackingCode}/status`] = status;
   await update(ref(db), updates);
+}
+
+
+// Public storefront product catalog. Only authenticated admins can change it (see database.rules.json).
+export function subscribeToProducts(onProducts, onError) {
+  const { db } = getServices();
+  return onValue(ref(db, "products"), (snapshot) => {
+    const value = snapshot.val();
+    onProducts(value ? Object.entries(value).map(([id, product]) => ({ id, ...product })) : []);
+  }, onError);
+}
+
+export async function saveProduct(product) {
+  const { db, auth } = getServices();
+  if (!auth.currentUser) throw new Error("Please sign in as an administrator.");
+  const adminSnapshot = await get(ref(db, `admins/${auth.currentUser.uid}`));
+  if (!adminSnapshot.exists()) throw new Error("You are not authorized to manage products.");
+  const { id, ...data } = product;
+  await update(ref(db, `products/${id}`), data);
+}
+
+export async function deleteProduct(productId) {
+  const { db, auth } = getServices();
+  if (!auth.currentUser) throw new Error("Please sign in as an administrator.");
+  const adminSnapshot = await get(ref(db, `admins/${auth.currentUser.uid}`));
+  if (!adminSnapshot.exists()) throw new Error("You are not authorized to manage products.");
+  await remove(ref(db, `products/${productId}`));
 }
