@@ -227,6 +227,26 @@ export function subscribeToRecentOrders(onOrders, onError) {
   );
 }
 
+export function subscribeToAnalyticsOrders(onOrders, onError, maxOrders = 1000) {
+  const { db } = getServices();
+  const ordersQuery = query(
+    ref(db, "orders"),
+    orderByChild("createdAt"),
+    limitToLast(maxOrders),
+  );
+  return onValue(
+    ordersQuery,
+    (snapshot) => {
+      const orders = [];
+      snapshot.forEach((orderSnapshot) => {
+        orders.push({ id: orderSnapshot.key, ...orderSnapshot.val() });
+      });
+      onOrders(orders.reverse());
+    },
+    onError,
+  );
+}
+
 export async function updateOrderStatus(orderId, status, trackingCode) {
   const { db } = getServices();
   const updates = { [`orders/${orderId}/status`]: status };

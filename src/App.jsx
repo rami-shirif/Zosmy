@@ -111,7 +111,7 @@ function App() {
   const [discountCode, setDiscountCode] = useState("");
   const [couponFeedback, setCouponFeedback] = useState("");
   const [guestReceipt, setGuestReceipt] = useState(null);
-  const [trackingCodeForAccount, setTrackingCodeForAccount] = useState("");
+  const [trackingCodeForAccount, setTrackingCodeForAccount] = useState(() => new URLSearchParams(window.location.search).get("tracking") || "");
   const [copiedTrackingCode, setCopiedTrackingCode] = useState(false);
   const [cart, setCart] = useState(readSavedCart);
   const [cartOpen, setCartOpen] = useState(false);
@@ -385,7 +385,7 @@ function App() {
         )}
       </AnimatePresence>
 
-      <main id="top">
+      <motion.main id="top" key={pathname} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.38, ease: "easeOut" }}>
         {pathname === "/account" ? (
           <Suspense fallback={<section className="account-page section-pad">Loading account…</section>}>
             <AccountPage
@@ -413,7 +413,7 @@ function App() {
           />
         ) : (
           <>
-        <section className="hero">
+        <motion.section className="hero" initial={{ opacity: 0, y: 22 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.12 }} transition={{ duration: 0.55, ease: "easeOut" }}>
           <div className="hero-copy">
             <motion.div
               className="eyebrow"
@@ -490,9 +490,9 @@ function App() {
           <a className="scroll-cue" href="#shop" aria-label="Scroll to shop">
             <ArrowDown size={16} />
           </a>
-        </section>
+        </motion.section>
 
-        <section className="value-strip" aria-label="Our values">
+        <motion.section className="value-strip" initial={{ opacity: 0, y: 22 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.12 }} transition={{ duration: 0.55, ease: "easeOut" }} aria-label="Our values">
           <span><Leaf size={17} /> KIND TO YOUR SKIN</span>
           <span className="strip-divider" />
           <span>GOOD-FOR-YOU INGREDIENTS</span>
@@ -500,9 +500,9 @@ function App() {
           <span>MADE WITH INTENTION</span>
           <span className="strip-divider" />
           <span>NEVER THE EXTRA STUFF</span>
-        </section>
+        </motion.section>
 
-        <section className="shop-section section-pad" id="shop">
+        <motion.section className="shop-section section-pad" initial={{ opacity: 0, y: 22 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.12 }} transition={{ duration: 0.55, ease: "easeOut" }} id="shop">
           <motion.div
             className="section-heading"
             variants={reveal}
@@ -592,7 +592,65 @@ function App() {
               ))}
             </AnimatePresence>
           </motion.div>
-        </section>
+        </motion.section>
+
+        <motion.section
+          className="concern-section section-pad"
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.16 }}
+          variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.1 } } }}
+          id="concerns"
+        >
+          <motion.div className="concern-heading" variants={reveal}>
+            <div className="eyebrow"><span className="eyebrow-line" /> START WITH WHAT YOUR SKIN NEEDS</div>
+            <h2>Your skin has a story.<br /><em>Find your starting point.</em></h2>
+            <p>Explore simple everyday care, one little ritual at a time.</p>
+          </motion.div>
+          <div className="concern-grid">
+            {[
+              { title: "A little more hydration", detail: "For skin that feels thirsty or tight.", image: products[0].image, category: "Skincare", tag: "HYDRATION" },
+              { title: "A softer daily ritual", detail: "Comforting care for your everyday routine.", image: products[1].image, category: "Skincare", tag: "DAILY CARE" },
+              { title: "Care from head to toe", detail: "A moment of nourishment beyond your face.", image: products[3].image, category: "Body care", tag: "BODY CARE" },
+            ].map((item) => (
+              <motion.article className="concern-card" key={item.tag} variants={reveal} whileHover={{ y: -7 }} transition={{ duration: 0.25 }}>
+                <div className="concern-image"><img src={item.image} alt="" loading="lazy" /></div>
+                <div className="concern-card-copy">
+                  <span>{item.tag}</span>
+                  <h3>{item.title}</h3>
+                  <p>{item.detail}</p>
+                  <button type="button" onClick={() => { setCategory(item.category); document.querySelector("#shop")?.scrollIntoView({ behavior: "smooth" }); }}>
+                    EXPLORE PRODUCTS <ArrowRight size={14} />
+                  </button>
+                </div>
+              </motion.article>
+            ))}
+          </div>
+        </motion.section>
+
+        <motion.section
+          className="ingredient-section"
+          initial={{ opacity: 0, y: 28 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.18 }}
+          transition={{ duration: 0.65, ease: [0.2, 0.65, 0.3, 0.9] }}
+          id="ingredients"
+        >
+          <div className="ingredient-photo"><img src="https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?auto=format&fit=crop&w=1200&q=85" alt="Skincare serum and botanical-inspired ingredients" loading="lazy" /></div>
+          <div className="ingredient-copy">
+            <div className="eyebrow"><span className="eyebrow-line" /> A CLOSER LOOK AT THE GOOD STUFF</div>
+            <h2>Ingredients with<br /><em>a purpose.</em></h2>
+            <p>Get to know a few of the ingredients featured in the Zosmy collection. Simple details, so you can choose with confidence.</p>
+            <div className="ingredient-list">
+              <div><span>01</span><section><strong>Hyaluronic Acid + Vitamin B5</strong><small>Featured in Dew Drops Serum · A hydration-focused pairing.</small></section></div>
+              <div><span>02</span><section><strong>Ceramides + Squalane</strong><small>Featured in Cloud Cream · Made for a comforting skin-care step.</small></section></div>
+              <div><span>03</span><section><strong>Mineral SPF 30</strong><small>Featured in Soft Focus · An everyday sun-care essential.</small></section></div>
+            </div>
+            <a className="text-link" href="#shop">EXPLORE THE COLLECTION <ArrowRight size={15} /></a>
+          </div>
+        </motion.section>
+
+        <RoutineFinder onAdd={addToBag} onOpen={(product) => navigate(`/products/${product.id}`)} />
 
         <motion.section
           className="review-section section-pad"
@@ -612,7 +670,7 @@ function App() {
           <TestimonialSlider />
         </motion.section>
 
-        <section className="story-section" id="story">
+        <motion.section className="story-section" initial={{ opacity: 0, y: 22 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.12 }} transition={{ duration: 0.55, ease: "easeOut" }} id="story">
           <div className="story-image">
             <img
               src="https://images.unsplash.com/photo-1547887538-e3a2f32cb1cc?auto=format&fit=crop&w=1300&q=85"
@@ -638,9 +696,9 @@ function App() {
             <a className="text-link" href="#ritual">A LITTLE MORE ABOUT US <ArrowRight size={15} /></a>
             <div className="story-signoff">With care, <span>the zosmy team</span></div>
           </motion.div>
-        </section>
+        </motion.section>
 
-        <section className="ritual-section section-pad" id="ritual">
+        <motion.section className="ritual-section section-pad" initial={{ opacity: 0, y: 22 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.12 }} transition={{ duration: 0.55, ease: "easeOut" }} id="ritual">
           <div className="ritual-heading">
             <div className="eyebrow"><span className="eyebrow-line" /> YOUR THREE-MINUTE RESET</div>
             <h2>Make room for <em>you.</em></h2>
@@ -665,9 +723,9 @@ function App() {
               <p>Take a breath. This part is just for you.</p>
             </div>
           </div>
-        </section>
+        </motion.section>
 
-        <section className="newsletter">
+        <motion.section className="newsletter" initial={{ opacity: 0, y: 22 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.12 }} transition={{ duration: 0.55, ease: "easeOut" }}>
           <div className="newsletter-sparkle"><Sparkles size={25} /></div>
           <p>NOTES FROM THE SOFTER SIDE</p>
           <h2>A little love in your inbox.</h2>
@@ -686,10 +744,10 @@ function App() {
             <button type="submit" aria-label="Subscribe"><ArrowRight size={18} /></button>
           </form>
           {newsletterStatus && <span className="newsletter-success">{newsletterStatus}</span>}
-        </section>
+        </motion.section>
           </>
         )}
-      </main>
+      </motion.main>
 
       {!selectedProduct && pathname !== "/account" && (
       <footer className="footer">
@@ -1134,6 +1192,60 @@ function PopularProducts({ products: items, onAdd, onOpen }) {
         ))}
       </div>
     </section>
+  );
+}
+
+function RoutineFinder({ onAdd, onOpen }) {
+  const [goal, setGoal] = useState("hydration");
+  const recommendations = {
+    hydration: ["dew-drops", "cloud-cream"],
+    everyday: ["soft-focus", "cloud-cream"],
+    body: ["body-oil", "lip-balm"],
+  };
+  const recommendedProducts = recommendations[goal]
+    .map((id) => products.find((product) => product.id === id))
+    .filter(Boolean);
+
+  return (
+    <motion.section
+      className="routine-finder section-pad"
+      initial={{ opacity: 0, y: 25 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.18 }}
+      transition={{ duration: 0.6 }}
+      id="routine-finder"
+    >
+      <div className="routine-finder-heading">
+        <div className="eyebrow"><span className="eyebrow-line" /> YOUR LITTLE ROUTINE FINDER</div>
+        <h2>Not sure where to start?<br /><em>Let's make it simple.</em></h2>
+        <p>Choose what you’re looking for and discover a few Zosmy essentials to explore.</p>
+      </div>
+      <div className="routine-options" role="group" aria-label="Choose your skincare goal">
+        {[
+          { value: "hydration", label: "More hydration" },
+          { value: "everyday", label: "Everyday face care" },
+          { value: "body", label: "Body & lip care" },
+        ].map((option) => (
+          <button type="button" key={option.value} className={goal === option.value ? "routine-option active" : "routine-option"} aria-pressed={goal === option.value} onClick={() => setGoal(option.value)}>
+            {option.label}
+          </button>
+        ))}
+      </div>
+      <motion.div className="routine-results" layout>
+        <AnimatePresence mode="wait">
+          <motion.div className="routine-result-grid" key={goal} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.25 }}>
+            {recommendedProducts.map((product) => (
+              <article className="routine-product" key={product.id}>
+                <button type="button" className="routine-product-image" onClick={() => onOpen(product)} aria-label={`View ${product.name}`}><img src={product.image} alt={product.name} loading="lazy" /></button>
+                <div><strong>{product.name}</strong><span>{formatDirhams(product.price)}</span></div>
+                <button type="button" className="routine-add" onClick={() => onAdd(product)}>ADD TO BAG <Plus size={13} /></button>
+              </article>
+            ))}
+          </motion.div>
+        </AnimatePresence>
+      </motion.div>
+      <p className="routine-disclaimer">A simple product discovery guide, not a medical or dermatological assessment.</p>
+    </motion.section>
   );
 }
 

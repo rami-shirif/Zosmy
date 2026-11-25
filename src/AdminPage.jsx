@@ -1,14 +1,18 @@
-import { useEffect, useState } from "react";
-import { ArrowLeft, LogOut, Package, Search } from "lucide-react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { ArrowLeft, BarChart3, Check, Copy, LogOut, MessageCircle, Package, Search } from "lucide-react";
 import {
   signInAdmin,
   signOutAdmin,
   subscribeToAdminSession,
+  subscribeToAnalyticsOrders,
   subscribeToRecentOrders,
   updateOrderStatus,
 } from "./firebase";
 import { products } from "./products";
 import { calculateOrderTotal } from "./orderPricing";
+
+const AnalyticsDashboard = lazy(() => import("./AnalyticsDashboard"));
 
 const orderStatuses = ["new", "confirmed", "delivered", "cancelled"];
 const orderFilters = ["all", ...orderStatuses];
@@ -43,6 +47,12 @@ export default function AdminPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [updatingOrderStatuses, setUpdatingOrderStatuses] = useState({});
   const [error, setError] = useState("");
+  const [copiedOrderId, setCopiedOrderId] = useState("");
+  const [tab, setTab] = useState(() =>
+    window.location.hash === "#orders" ? "orders" : "analytics",
+  );
+  const [analyticsOrders, setAnalyticsOrders] = useState([]);
+  const [analyticsLoading, setAnalyticsLoading] = useState(true);
   const orderCounts = orderStatuses.reduce(
     (counts, status) => ({
       ...counts,
@@ -67,7 +77,7 @@ export default function AdminPage() {
   });
 
   useEffect(() => {
-    document.title = "Orders — Zosmy Admin";
+    document.title = "Dashboard — Zosmy Admin";
   }, []);
 
   useEffect(() => {
@@ -112,6 +122,36 @@ export default function AdminPage() {
     };
   }, [admin]);
 
+  useEffect(() => {
+    if (!admin || tab !== "analytics") return undefined;
+    let active = true;
+    setAnalyticsLoading(true);
+    const unsubscribe = subscribeToAnalyticsOrders(
+      (result) => {
+        if (active) {
+          setAnalyticsOrders(result);
+          setAnalyticsLoading(false);
+        }
+      },
+      (loadError) => {
+        console.error("Could not load analytics.", loadError);
+        if (active) {
+          setError(loadError.message || "Could not load analytics.");
+          setAnalyticsLoading(false);
+        }
+      },
+    );
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [admin, tab]);
+
+  function selectTab(nextTab) {
+    setTab(nextTab);
+    window.history.replaceState(null, "", nextTab === "orders" ? "#orders" : window.location.pathname);
+  }
+
   async function handleLogin(event) {
     event.preventDefault();
     setIsLoading(true);
@@ -147,6 +187,67 @@ export default function AdminPage() {
     }
   }
 
+
+  function buildCustomerMessage(order) {
+    const customerName = order.customer?.name?.trim() || "there";
+    const orderItems = Object.entries(order.items || {});
+    const productsText = orderItems.map(([productId, item]) => {
+      const product = productById.get(productId);
+      return `• ${product?.name || item.name || productId} × ${item.quantity}`;
+    }).join("\n");
+    const trackingUrl = order.trackingCode
+      ? `${window.location.origin}/account?tracking=${encodeURIComponent(order.trackingCode)}`
+      : `${window.location.origin}/account`;
+
+    return [
+      `Hello dear ${customerName} 🌸`,
+      "",
+      "Thank you for choosing Zosmy! We're happy to receive your order.",
+      "",
+      "Your order:",
+      productsText || "• Your selected products",
+      "",
+      order.trackingCode ? `Tracking number: ${order.trackingCode}` : "Your tracking number will be shared with you shortly.",
+      `Track your order here: ${trackingUrl}`,
+      "",
+      "Thank you for shopping with us 💚",
+      "Zosmy Team",
+    ].join("\n");
+  }
+
+  async function handleCopyCustomerMessage(order) {
+    try {
+      await navigator.clipboard.writeText(buildCustomerMessage(order));
+      setCopiedOrderId(order.id);
+      window.setTimeout(() => setCopiedOrderId((current) => current === order.id ? "" : current), 2200);
+    } catch (copyError) {
+      console.error("Could not copy the customer message.", copyError);
+      setError("Could not copy the message. Please check clipboard permissions and try again.");
+    }
+  }
+
+  function handleWhatsAppCustomerMessage(order) {
+    const rawPhone = String(order.customer?.phone || "").trim();
+    let phone = rawPhone.replace(/[^0-9]/g, "");
+    if (rawPhone.startsWith("+")) {
+      // International number: keep its country code after removing punctuation.
+    } else if (phone.startsWith("00")) {
+      phone = phone.slice(2);
+    } else if (phone.startsWith("0")) {
+      phone = `212${phone.slice(1)}`;
+    } else if (phone.length === 9 && /^[67]/.test(phone)) {
+      phone = `212${phone}`;
+    }
+
+    if (phone.length < 8 || phone.length > 15) {
+      setError("This order does not have a valid phone number for WhatsApp.");
+      return;
+    }
+
+    const whatsappUrl = `https://wa.me/${phone}?text=${encodeURIComponent(buildCustomerMessage(order))}`;
+    window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+  }
+
   async function handleSignOut() {
     try {
       await signOutAdmin();
@@ -171,8 +272,8 @@ export default function AdminPage() {
       <main className="admin-main">
         <div className="admin-title-row">
           <div>
-            <span className="eyebrow"><span className="eyebrow-line" /> ZOSMY STORE</span>
-            <h1>Order dashboard</h1>
+            <span className="eyebrow"><span className="eyebrow-line" /> Zosmy studio</span>
+            <h1>{admin ? (tab === "analytics" ? "Analytics" : "Orders") : "Admin sign in"}</h1>
           </div>
           {admin && (
             <div className="admin-actions">
@@ -188,7 +289,7 @@ export default function AdminPage() {
         {isLoading && !admin ? (
           <p className="admin-empty" role="status">Checking admin session…</p>
         ) : !admin ? (
-          <form className="admin-login" onSubmit={handleLogin}>
+          <motion.form className="admin-login" onSubmit={handleLogin} initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45 }}>
             <h2>Sign in</h2>
             <p>Use an admin account created in Firebase Authentication.</p>
             <label>
@@ -212,10 +313,25 @@ export default function AdminPage() {
               />
             </label>
             <button className="button button-dark" type="submit" disabled={isLoading}>
-              {isLoading ? "SIGNING IN..." : "OPEN ORDERS"}
+              {isLoading ? "Signing in…" : "Open dashboard"}
             </button>
-          </form>
+          </motion.form>
         ) : (
+          <>
+          <nav className="admin-tabs" aria-label="Dashboard sections">
+            <button type="button" className={tab === "analytics" ? "active" : ""} aria-current={tab === "analytics" ? "page" : undefined} onClick={() => selectTab("analytics")}>
+              <BarChart3 size={15} aria-hidden="true" /> Analytics
+            </button>
+            <button type="button" className={tab === "orders" ? "active" : ""} aria-current={tab === "orders" ? "page" : undefined} onClick={() => selectTab("orders")}>
+              <Package size={15} aria-hidden="true" /> Orders
+              {orderCounts.new > 0 && <span className="admin-tab-badge">{orderCounts.new}</span>}
+            </button>
+          </nav>
+          {tab === "analytics" ? (
+            <Suspense fallback={<p className="admin-empty" role="status">Loading analytics…</p>}>
+              <AnalyticsDashboard orders={analyticsOrders} isLoading={analyticsLoading} />
+            </Suspense>
+          ) : (
           <section className="admin-orders" aria-live="polite">
             <div className="admin-overview" aria-label="Order totals">
               {orderFilters.map((status) => {
@@ -273,7 +389,7 @@ export default function AdminPage() {
                   );
                   const total = calculateOrderTotal(subtotal, order.discountCode);
                   return (
-                    <article className="admin-order-card" key={order.id}>
+                    <motion.article className="admin-order-card" key={order.id} layout initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
                       <div className="admin-order-top">
                         <div>
                           <span className="admin-order-id">ORDER {order.id.toUpperCase()}</span>
@@ -326,16 +442,38 @@ export default function AdminPage() {
                         <span>{order.discountCode === "zosmy2027" ? "Total · ZOSMY2027 applied" : "Total · pay on delivery"}</span>
                         <strong>{formatPrice(total)}</strong>
                       </div>
-                      {order.trackingCode && <p className="admin-tracking-code">Guest tracking: {order.trackingCode}</p>}
+                      <div className="admin-order-tools">
+                        {order.trackingCode && <p className="admin-tracking-code">Guest tracking: {order.trackingCode}</p>}
+                        <button
+                          type="button"
+                          className="admin-copy-message"
+                          onClick={() => handleCopyCustomerMessage(order)}
+                          aria-label={`Copy welcome message for ${order.customer?.name || "customer"}`}
+                        >
+                          {copiedOrderId === order.id ? <Check size={15} /> : <Copy size={15} />}
+                          {copiedOrderId === order.id ? "MESSAGE COPIED" : "COPY MESSAGE"}
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-whatsapp-message"
+                          onClick={() => handleWhatsAppCustomerMessage(order)}
+                          disabled={!order.customer?.phone}
+                          aria-label={`Open WhatsApp message for ${order.customer?.name || "customer"}`}
+                        >
+                          <MessageCircle size={15} /> SEND WITH WHATSAPP
+                        </button>
+                      </div>
                       <p className="admin-telegram-status">
                         Telegram: {order.telegramStatus || "not scheduled"}
                       </p>
-                    </article>
+                    </motion.article>
                   );
                 })}
               </div>
             )}
           </section>
+          )}
+          </>
         )}
       </main>
     </div>
